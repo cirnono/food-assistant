@@ -417,6 +417,22 @@ REVIEW_HTML = r'''
       font-size: 13px;
     }
 
+    .llm-status-panel {
+      margin: 12px 18px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--panel);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .llm-status-panel strong {
+      margin-right: 4px;
+    }
+
     .token-input {
       width: min(320px, 42vw);
     }
@@ -605,6 +621,21 @@ REVIEW_HTML = r'''
       </button>
     </div>
   </header>
+
+  <section class="llm-status-panel" aria-live="polite">
+    <strong>AI 配置状态</strong>
+    <span id="llmConfigStatus" class="status-line">
+      认证后显示
+    </span>
+    <button
+      id="llmTestButton"
+      type="button"
+      onclick="testLlmConnection()"
+      disabled
+    >
+      测试连接
+    </button>
+  </section>
 
   <main class="layout">
     <aside class="sidebar">
@@ -906,6 +937,60 @@ REVIEW_HTML = r'''
       : "var(--success)";
   }
 
+  function setLlmConfigStatus(text, isError = false) {
+    const element = document.getElementById(
+      "llmConfigStatus"
+    );
+    element.textContent = text;
+    element.style.color = isError
+      ? "var(--danger)"
+      : "var(--muted)";
+  }
+
+  async function loadLlmStatus() {
+    const button = document.getElementById(
+      "llmTestButton"
+    );
+    try {
+      const data = await api(
+        "/api/v1/system/llm-status"
+      );
+      setLlmConfigStatus(
+        `Provider: ${data.provider}`
+        + ` · Model: ${data.model}`
+        + ` · API Key: ${
+          data.api_key_configured ? "已配置" : "未配置"
+        }`
+      );
+      button.disabled = !data.configured;
+    } catch (error) {
+      button.disabled = true;
+      setLlmConfigStatus(error.message, true);
+    }
+  }
+
+  async function testLlmConnection() {
+    const button = document.getElementById(
+      "llmTestButton"
+    );
+    button.disabled = true;
+    setLlmConfigStatus("正在测试 AI 连接……");
+    try {
+      const data = await api(
+        "/api/v1/system/llm-test",
+        {method: "POST"}
+      );
+      setLlmConfigStatus(
+        `${data.provider} · ${data.model}`
+        + ` · 连接成功 (${data.latency_ms} ms)`
+      );
+    } catch (error) {
+      setLlmConfigStatus(error.message, true);
+    } finally {
+      button.disabled = false;
+    }
+  }
+
   function saveApiToken() {
     const input = document.getElementById(
       "apiTokenInput"
@@ -971,6 +1056,10 @@ REVIEW_HTML = r'''
       "令牌已清除",
       true
     );
+    document.getElementById(
+      "llmTestButton"
+    ).disabled = true;
+    setLlmConfigStatus("认证后显示");
   }
 
   async function refreshAll() {
@@ -1010,6 +1099,7 @@ REVIEW_HTML = r'''
         } · 已认证`
       );
 
+      await loadLlmStatus();
       await loadJobs();
 
     } catch (error) {
@@ -1116,7 +1206,7 @@ REVIEW_HTML = r'''
 
   async function loadItems(jobId) {
     const data = await api(
-      `/api/v1/import-jobs/${jobId}/items`
+      `/api/v1/import-jobs/${jobId}/items?limit=1000`
     );
 
     state.items = normaliseCollection(

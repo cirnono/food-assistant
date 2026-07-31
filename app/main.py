@@ -24,6 +24,7 @@ from app.mealie_client import (
 from app.recommendations import (
     router as recommendations_router,
 )
+from app.system_api import router as system_router
 
 
 APP_VERSION = "0.20.1"
@@ -52,6 +53,7 @@ app.include_router(recommendations_router)
 app.include_router(ai_recipes_router)
 app.include_router(github_sources_router)
 app.include_router(import_queue_router)
+app.include_router(system_router)
 
 
 @app.get("/")

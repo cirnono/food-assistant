@@ -20,10 +20,11 @@ bodies here.
 - Phase 0 — audit: validated against the live tree; report is tracked in the
   phase-1 baseline commit.
 - Phase 1 — repository hygiene: complete in commit `18b05c9`.
-- Phase 2 — provider abstraction: implemented and validated; commit pending.
-- Phases 3–8: not started.
+- Phase 2 — provider abstraction: complete in commit `63931ac`.
+- Phase 3 — secure status/test API and review UI panel: implemented and
+  validated; commit pending.
+- Phases 4–8: not started.
 
 ## Resume point
 
-Commit phase 2, then implement the authenticated LLM status/test endpoints and
-the read-only review UI status panel for phase 3.
+Commit phase 3, then add safe environment and Compose examples for phase 4.
