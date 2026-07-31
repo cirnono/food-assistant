@@ -303,3 +303,70 @@ def mark_record_failed(
             "now": utc_now(),
         },
     )
+
+
+def upsert_reconciled_record(
+    db: Session,
+    *,
+    import_item_id: int,
+    source_id: int,
+    source_recipe_id: int,
+    source_content_sha256: str,
+    import_key: str,
+    mealie_slug: str,
+    mealie_recipe_id: str,
+) -> None:
+    """Restore a verified imported record without committing the transaction."""
+    now = utc_now()
+    db.execute(
+        text(
+            """
+            INSERT INTO mealie_import_records (
+                import_item_id,
+                source_id,
+                source_recipe_id,
+                source_content_sha256,
+                import_key,
+                state,
+                mealie_slug,
+                mealie_recipe_id,
+                error,
+                created_at,
+                updated_at
+            )
+            VALUES (
+                :import_item_id,
+                :source_id,
+                :source_recipe_id,
+                :source_content_sha256,
+                :import_key,
+                'imported',
+                :mealie_slug,
+                :mealie_recipe_id,
+                NULL,
+                :now,
+                :now
+            )
+            ON CONFLICT(import_item_id) DO UPDATE SET
+                source_id = excluded.source_id,
+                source_recipe_id = excluded.source_recipe_id,
+                source_content_sha256 = excluded.source_content_sha256,
+                import_key = excluded.import_key,
+                state = 'imported',
+                mealie_slug = excluded.mealie_slug,
+                mealie_recipe_id = excluded.mealie_recipe_id,
+                error = NULL,
+                updated_at = excluded.updated_at
+            """
+        ),
+        {
+            "import_item_id": import_item_id,
+            "source_id": source_id,
+            "source_recipe_id": source_recipe_id,
+            "source_content_sha256": source_content_sha256,
+            "import_key": import_key,
+            "mealie_slug": mealie_slug,
+            "mealie_recipe_id": mealie_recipe_id,
+            "now": now,
+        },
+    )
