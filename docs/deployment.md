@@ -22,12 +22,26 @@ chmod 600 secrets/*
 docker compose -f compose.yaml -f compose.auth.yaml up -d --build
 ```
 
+To keep credentials outside the repository directory, set these variables in
+the ignored `.env` file to absolute host paths:
+
+```dotenv
+FOOD_ASSISTANT_API_TOKEN_HOST_FILE=/path/to/food_assistant_api_token
+MEALIE_TOKEN_HOST_FILE=/path/to/mealie_token
+```
+
+Do not set `COMPOSE_FILE`; invoke the explicit `-f` command above so the
+selected overlays remain visible and reproducible.
+
 For an OpenAI-compatible LLM key, also create `secrets/llm_api_key` and run:
 
 ```bash
 docker compose -f compose.yaml -f compose.auth.yaml \
   -f compose.llm-secret.yaml up -d --build
 ```
+
+The LLM secret defaults to the ignored `secrets/llm_api_key`. Set
+`LLM_API_KEY_HOST_FILE=/path/to/llm_api_key` to use an external host file.
 
 The data bind mount defaults to `./data`. Existing installations using another
 host path should set `FOOD_ASSISTANT_DATA_DIR` before recreating the container.

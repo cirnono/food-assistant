@@ -40,6 +40,10 @@ docker compose -f compose.yaml -f compose.auth.yaml up -d --build
 ```
 
 请在 `secrets/` 中分别创建 Food Assistant 和 Mealie 密钥文件。
+也可以在 `.env` 中通过 `FOOD_ASSISTANT_API_TOKEN_HOST_FILE` 和
+`MEALIE_TOKEN_HOST_FILE` 指向仓库外的宿主机绝对路径；容器内仍挂载到
+`/run/secrets/...`。不要设置 `COMPOSE_FILE`，请显式使用上面的 `-f` 参数，避免
+实际加载的 overlay 不明确。
 也可以只在服务端 `.env` 使用环境变量，然后执行 `docker compose up -d --build`。
 不要把 `.env` 或 secret 文件提交到 Git。
 
@@ -67,8 +71,13 @@ LLM_API_KEY_FILE=/run/secrets/llm_api_key
 LLM_MODEL=example-model
 ```
 
-若以 Docker Secret 提供 LLM Key，请创建 `secrets/llm_api_key`，并在 Compose
-命令中增加 `-f compose.llm-secret.yaml`。
+若以 Docker Secret 提供 LLM Key，请创建 `secrets/llm_api_key`，或通过
+`LLM_API_KEY_HOST_FILE` 指向仓库外的宿主机绝对路径，并执行：
+
+```bash
+docker compose -f compose.yaml -f compose.auth.yaml \
+  -f compose.llm-secret.yaml up -d --build
+```
 
 该模式面向 DeepSeek、OpenRouter、LM Studio、vLLM、LiteLLM 等常见兼容服务，
 实际能力取决于上游和模型。详见 [Provider 文档](docs/providers.md)。
