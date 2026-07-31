@@ -26,9 +26,11 @@ bodies here.
 - Phase 4 — safe environment and Compose examples: implemented and validated;
   complete in commit `0a5a607`.
 - Phase 5 — test/lint toolchain and regression coverage: implemented and
-  validated (21 tests); commit pending.
-- Phases 6–8: not started.
+  complete in commit `b140c5a`.
+- Phase 6 — public documentation, license, changelog, security and contributing
+  files: implemented and validated; commit pending.
+- Phases 7–8: not started.
 
 ## Resume point
 
-Commit phase 5, then prepare the public documentation and license files.
+Commit phase 6, then add GitHub Actions and contribution templates.
