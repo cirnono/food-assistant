@@ -3295,6 +3295,10 @@ async def import_item_to_mealie(
             verify_native_structure(
                 normalized,
                 verified_recipe,
+                resolved_categories=(
+                    resolution["categories"]
+                ),
+                resolved_tags=resolution["tags"],
             )
         )
 
@@ -4810,6 +4814,10 @@ async def upgrade_mealie_structure(
             verify_native_structure(
                 normalized,
                 verified_recipe,
+                resolved_categories=(
+                    resolution["categories"]
+                ),
+                resolved_tags=resolution["tags"],
             )
         )
 
