@@ -24,9 +24,11 @@ bodies here.
 - Phase 3 — secure status/test API and review UI panel: implemented and
   complete in commit `ec7df8a`.
 - Phase 4 — safe environment and Compose examples: implemented and validated;
-  commit pending.
-- Phases 5–8: not started.
+  complete in commit `0a5a607`.
+- Phase 5 — test/lint toolchain and regression coverage: implemented and
+  validated (21 tests); commit pending.
+- Phases 6–8: not started.
 
 ## Resume point
 
-Commit phase 4, then add the test/lint toolchain and regression coverage.
+Commit phase 5, then prepare the public documentation and license files.

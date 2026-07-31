@@ -2,12 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-from pathlib import Path
+import re
 from typing import Literal
 from urllib.parse import quote
-
-import httpx
 
 from fastapi import (
     APIRouter,
