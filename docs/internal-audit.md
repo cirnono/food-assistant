@@ -83,10 +83,10 @@ Secrets 通过 Docker Compose `secrets:` 注入（`/run/secrets/mealie_token`、
    - 环境变量可覆盖，但代码兜底会泄露内网拓扑，且会作为兜底连接错误目标。
    - **处置**：改为通用占位符（如 `http://host.docker.internal:11434`）。
 2. **本地绝对路径（中）**：
-   - `api_auth.py:14-17`（`/run/secrets/…`、`/srv/appdata/food-assistant/secrets/…`）
+   - `api_auth.py:14-17`（通用容器 secret 路径与旧的主机专用 secret 路径）
    - `mealie_importer.py:50-58`、`mealie_client.py:19`（`/run/secrets/mealie_token`）
-   - `/srv/appdata` 是家庭服务器专用路径，公开后无意义且泄露内部结构。
-   - **处置**：保留 `/run/secrets` 这类通用容器路径，移除 `/srv/appdata/...` 候选。
+   - 主机专用路径公开后无意义且会泄露内部结构。
+   - **处置**：保留 `/run/secrets` 这类通用容器路径，移除主机专用候选。
 3. **浏览器 localStorage 存 API Token（中）**：`review_ui.py:909-929` 将用户输入的
    Food Assistant Token 明文存入 `localStorage`（XSS 可读）。这是既有 UX 取舍；
    AI API Key 从未进入浏览器，本仓库亦不会新增此行为。
@@ -109,8 +109,8 @@ Secrets 通过 Docker Compose `secrets:` 注入（`/run/secrets/mealie_token`、
 7. **无 README / LICENSE / 文档**：`docs/` 为空目录。
 8. **AI 配置是 Ollama 专属**：`ollama_structured_chat` 硬编码 Ollama 调用细节，
    需抽象出 provider 层以支持 OpenAI-compatible 服务。
-9. **`.env` 与 secrets 位于仓库目录内**：`.env` 在 `/srv/docker/food-assistant/.env`，
-   必须确保不被提交；`compose.auth.yaml` 引用了 `/srv/appdata/...` 绝对路径。
+9. **`.env` 与 secrets 位于部署目录内**：必须确保 `.env` 不被提交；旧版
+   `compose.auth.yaml` 曾引用主机专用绝对路径。
 
 ## 5. API 抽象设计
 

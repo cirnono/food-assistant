@@ -28,9 +28,13 @@ bodies here.
 - Phase 5 — test/lint toolchain and regression coverage: implemented and
   complete in commit `b140c5a`.
 - Phase 6 — public documentation, license, changelog, security and contributing
-  files: implemented and validated; commit pending.
-- Phases 7–8: not started.
+  files: complete in commit `9f8399c`.
+- Phase 7 — GitHub Actions and contribution templates: complete in commit
+  `8bb12b3`.
+- Phase 8 — final security, version, build, test, and smoke checks: complete;
+  release commit pending.
 
 ## Resume point
 
-Commit phase 6, then add GitHub Actions and contribution templates.
+Create the phase-8 release commit, then follow the documented GitHub publishing
+commands when the repository owner is ready. Do not push automatically.

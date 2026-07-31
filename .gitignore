@@ -32,13 +32,15 @@ sources/
 repositories/
 secrets/
 backup-v*/
-/srv/appdata/
 
 # ---- 备份与历史版本 ----
 *.bak
+*.bak-*
 *.log
 
 # ---- 编辑器/系统 ----
 .DS_Store
 .vscode/
 .idea/
+
+compose.override.yaml
