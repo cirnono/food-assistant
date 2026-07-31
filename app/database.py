@@ -93,6 +93,22 @@ def ensure_schema_migrations() -> None:
                 "TEXT NOT NULL DEFAULT ''"
             )
 
+        item_rows = connection.exec_driver_sql(
+            "PRAGMA table_info(recipe_import_items)"
+        ).fetchall()
+        item_columns = {str(row[1]) for row in item_rows}
+        duplicate_columns = {
+            "duplicate_of_item_id": "INTEGER",
+            "duplicate_mealie_slug": "VARCHAR(255)",
+            "duplicate_reason": "TEXT",
+        }
+        for column_name, column_type in duplicate_columns.items():
+            if item_rows and column_name not in item_columns:
+                connection.exec_driver_sql(
+                    "ALTER TABLE recipe_import_items "
+                    f"ADD COLUMN {column_name} {column_type}"
+                )
+
 
 def get_db() -> Generator[Session, None, None]:
     db = SessionLocal()
