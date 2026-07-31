@@ -33,6 +33,10 @@ class MealieImportError(RuntimeError):
 
 
 def read_mealie_token() -> str:
+    environment_token = os.getenv("MEALIE_TOKEN", "").strip()
+    if environment_token:
+        return environment_token
+
     candidates: list[Path] = []
 
     configured_path = os.getenv(
@@ -52,19 +56,10 @@ def read_mealie_token() -> str:
             Path(
                 "/secrets/mealie_token"
             ),
-            Path(
-                "/srv/appdata/"
-                "food-assistant/secrets/"
-                "mealie_token"
-            ),
         ]
     )
 
-    checked: list[str] = []
-
     for path in candidates:
-        checked.append(str(path))
-
         if not path.is_file():
             continue
 
@@ -76,9 +71,7 @@ def read_mealie_token() -> str:
             return token
 
     raise MealieImportError(
-        "Mealie token not found or empty. "
-        "Checked: "
-        + ", ".join(checked)
+        "Mealie token is not configured or is empty"
     )
 
 

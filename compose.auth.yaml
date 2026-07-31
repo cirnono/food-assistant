@@ -1,7 +1,23 @@
+# Optional Docker Secrets overlay:
+# docker compose -f compose.yaml -f compose.auth.yaml up -d
 services:
   food-assistant:
     environment:
+      FOOD_ASSISTANT_API_TOKEN: ""
       FOOD_ASSISTANT_API_TOKEN_FILE: /run/secrets/food_assistant_api_token
+      MEALIE_TOKEN: ""
+      MEALIE_TOKEN_FILE: /run/secrets/mealie_token
+      LLM_API_KEY: ""
+      LLM_API_KEY_FILE: /run/secrets/llm_api_key
+    secrets:
+      - food_assistant_api_token
+      - mealie_token
+      - llm_api_key
 
-    volumes:
-      - /srv/appdata/food-assistant/secrets/food_assistant_api_token:/run/secrets/food_assistant_api_token:ro
+secrets:
+  food_assistant_api_token:
+    file: ./secrets/food_assistant_api_token
+  mealie_token:
+    file: ./secrets/mealie_token
+  llm_api_key:
+    file: ./secrets/llm_api_key

@@ -13,8 +13,6 @@ from starlette.responses import Response
 TOKEN_FILE_CANDIDATES = (
     "/run/secrets/food_assistant_api_token",
     "/secrets/food_assistant_api_token",
-    "/srv/appdata/food-assistant/secrets/"
-    "food_assistant_api_token",
 )
 
 
@@ -52,11 +50,7 @@ def read_api_token() -> str:
         in TOKEN_FILE_CANDIDATES
     )
 
-    checked: list[str] = []
-
     for path in paths:
-        checked.append(str(path))
-
         if not path.is_file():
             continue
 
@@ -73,9 +67,7 @@ def read_api_token() -> str:
         return token
 
     raise ApiTokenConfigurationError(
-        "Food Assistant API token was "
-        "not found. Checked: "
-        + ", ".join(checked)
+        "Food Assistant API token was not found"
     )
 
 

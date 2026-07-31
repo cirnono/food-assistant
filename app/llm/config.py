@@ -17,9 +17,9 @@ def _new_or_legacy(
     legacy_name: str | None,
     default: str,
 ) -> tuple[str, bool]:
-    if new_name in os.environ:
+    if os.environ.get(new_name, "").strip():
         return os.environ[new_name], False
-    if legacy_name and legacy_name in os.environ:
+    if legacy_name and os.environ.get(legacy_name, "").strip():
         return os.environ[legacy_name], True
     return default, False
 

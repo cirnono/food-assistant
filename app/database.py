@@ -18,7 +18,10 @@ DATABASE_PATH = Path(
     )
 )
 
-DATABASE_URL = f"sqlite:///{DATABASE_PATH}"
+DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    f"sqlite:///{DATABASE_PATH}",
+).strip()
 
 
 class Base(DeclarativeBase):

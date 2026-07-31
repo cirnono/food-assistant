@@ -13,29 +13,27 @@ MEALIE_BASE_URL = os.environ.get(
     "http://host.docker.internal:9925",
 ).rstrip("/")
 
-MEALIE_TOKEN_FILE = Path(
-    os.environ.get(
-        "MEALIE_TOKEN_FILE",
-        "/run/secrets/mealie_token",
-    )
-)
+MEALIE_TOKEN_FILE = os.environ.get("MEALIE_TOKEN_FILE", "").strip()
 
 
 def read_mealie_token() -> str:
-    try:
-        token = MEALIE_TOKEN_FILE.read_text(
-            encoding="utf-8",
-        ).strip()
-    except OSError as exc:
-        raise RuntimeError(
-            f"Cannot read Mealie token file: "
-            f"{MEALIE_TOKEN_FILE}"
-        ) from exc
-
-    if not token:
-        raise RuntimeError("Mealie token file is empty")
-
-    return token
+    environment_token = os.environ.get("MEALIE_TOKEN", "").strip()
+    if environment_token:
+        return environment_token
+    candidates = []
+    if MEALIE_TOKEN_FILE:
+        candidates.append(Path(MEALIE_TOKEN_FILE))
+    candidates.extend(
+        (Path("/run/secrets/mealie_token"), Path("/secrets/mealie_token"))
+    )
+    for path in candidates:
+        try:
+            token = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if token:
+            return token
+    raise RuntimeError("Mealie token is not configured or is empty")
 
 
 async def mealie_get(

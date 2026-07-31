@@ -22,9 +22,11 @@ bodies here.
 - Phase 1 — repository hygiene: complete in commit `18b05c9`.
 - Phase 2 — provider abstraction: complete in commit `63931ac`.
 - Phase 3 — secure status/test API and review UI panel: implemented and
-  validated; commit pending.
-- Phases 4–8: not started.
+  complete in commit `ec7df8a`.
+- Phase 4 — safe environment and Compose examples: implemented and validated;
+  commit pending.
+- Phases 5–8: not started.
 
 ## Resume point
 
-Commit phase 3, then add safe environment and Compose examples for phase 4.
+Commit phase 4, then add the test/lint toolchain and regression coverage.
