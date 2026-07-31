@@ -1,0 +1,7 @@
+services:
+  food-assistant:
+    environment:
+      FOOD_ASSISTANT_API_TOKEN_FILE: /run/secrets/food_assistant_api_token
+
+    volumes:
+      - /srv/appdata/food-assistant/secrets/food_assistant_api_token:/run/secrets/food_assistant_api_token:ro
