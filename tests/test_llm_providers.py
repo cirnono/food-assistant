@@ -5,6 +5,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
+from app.ai_recipes import NormalizedRecipe
 from app.llm.config import LLMSettings
 from app.llm.errors import LLMProviderError, is_infrastructure_error
 from app.llm.ollama import OllamaProvider
@@ -41,18 +42,97 @@ def mock_client(monkeypatch: pytest.MonkeyPatch, handler) -> None:
 
 @pytest.mark.asyncio
 async def test_ollama_structured_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    schema = NormalizedRecipe.model_json_schema()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/chat"
-        assert b'"num_ctx":6144' in request.content
+        payload = __import__("json").loads(request.content)
+        assert payload["format"] == schema
+        assert payload["format"] != "json"
+        assert payload["format"]["properties"]["ingredients"]["minItems"] == 1
+        assert payload["format"]["properties"]["instructions"]["minItems"] == 1
+        assert payload["stream"] is False
+        assert payload["think"] is False
+        assert payload["options"] == {
+            "temperature": 0,
+            "num_ctx": 6144,
+            "num_predict": 256,
+        }
         return httpx.Response(
-            200, json={"message": {"content": '{"name":"ok"}'}}
+            200,
+            json={
+                "message": {
+                    "content": "result: " + __import__("json").dumps(
+                        valid_recipe_payload()
+                    )
+                }
+            },
         )
 
     mock_client(monkeypatch, handler)
     result = await OllamaProvider(settings()).structured_chat(
-        system_prompt="system", user_prompt="user", response_schema={}
+        system_prompt="system", user_prompt="user", response_schema=schema
     )
-    assert result == {"name": "ok"}
+    assert NormalizedRecipe.model_validate(result).name == "ok"
+
+
+def valid_recipe_payload() -> dict:
+    return {
+        "name": "ok",
+        "original_name": "ok",
+        "description": None,
+        "cuisine": "中餐",
+        "categories": ["晚餐"],
+        "tags": [],
+        "servings": None,
+        "prep_time_minutes": None,
+        "cook_time_minutes": None,
+        "total_time_minutes": None,
+        "ingredients": [
+            {
+                "food_name": "水",
+                "quantity": None,
+                "unit": None,
+                "note": None,
+                "original_text": "水",
+            }
+        ],
+        "instructions": [{"step_number": 1, "text": "加水", "timers": []}],
+        "source": {
+            "source_name": None,
+            "source_url": None,
+            "source_path": None,
+            "source_license": None,
+        },
+        "import_score": 80,
+        "recommendation": "review",
+        "possible_duplicate": False,
+        "duplicate_candidates": [],
+        "warnings": [],
+        "review_required": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_ollama_does_not_send_or_log_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "do-not-log-this-api-key"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "authorization" not in request.headers
+        return httpx.Response(500, json={"error": "upstream failed"})
+
+    mock_client(monkeypatch, handler)
+    provider = OllamaProvider(settings(api_key=secret))
+    with pytest.raises(LLMProviderError):
+        await provider.structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio

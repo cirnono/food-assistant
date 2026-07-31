@@ -20,13 +20,12 @@ class OllamaProvider:
         user_prompt: str,
         response_schema: dict[str, Any],
     ) -> dict[str, Any]:
-        del response_schema  # Ollama's json mode is retained for compatibility.
         payload = {
             "model": self.settings.model,
             "stream": False,
             "think": False,
             "keep_alive": self.settings.keep_alive,
-            "format": "json",
+            "format": response_schema,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},

@@ -489,6 +489,28 @@ def build_source_url(
     )
 
 
+def build_normalization_user_prompt(
+    *,
+    content: str,
+    source_metadata: dict,
+) -> str:
+    return (
+        "请整理以下一道菜谱。菜谱正文完整保留如下：\n\n"
+        "待整理菜谱原文：\n"
+        + content
+        + "\n\n来源信息：\n"
+        + json.dumps(
+            source_metadata,
+            ensure_ascii=False,
+        )
+        + "\n\n输出要求：\n"
+        "- 严格遵循请求携带的 JSON Schema。\n"
+        "- ingredients 和 instructions 均不得为空。\n"
+        "- 不得编造正文中不存在的食材、步骤或数量。\n"
+        "- 重复检测由程序侧负责；不要猜测其他菜谱。"
+    )
+
+
 V20_VALID_CATEGORIES = (
     "早餐",
     "午餐",
@@ -1089,31 +1111,9 @@ async def normalize_source_recipe(
         "source_license": None,
     }
 
-    known_names = existing_normalized_names(
-        db,
-        job.id,
-    )
-
-    user_prompt = (
-        "请整理以下一道菜谱。\n\n"
-        "来源信息：\n"
-        + json.dumps(
-            source_metadata,
-            ensure_ascii=False,
-        )
-        + "\n\n已有菜谱名称，用于重复检测：\n"
-        + json.dumps(
-            known_names,
-            ensure_ascii=False,
-        )
-        + "\n\n必须遵循的输出 JSON Schema：\n"
-        + json.dumps(
-            schema,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-        + "\n\n待整理菜谱原文：\n"
-        + content
+    user_prompt = build_normalization_user_prompt(
+        content=content,
+        source_metadata=source_metadata,
     )
 
     payload = await get_llm_provider().structured_chat(
@@ -1163,12 +1163,7 @@ async def normalize_source_recipe(
                 separators=(",", ":"),
                 default=str,
             )
-            + "\n\n目标 JSON Schema：\n"
-            + json.dumps(
-                schema,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
+            + "\n\ningredients 和 instructions 均不得为空。"
             + "\n\n需要修复的 JSON：\n"
             + json.dumps(
                 prepared,
