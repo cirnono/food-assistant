@@ -55,6 +55,8 @@ from app.mealie_import_records import (
     record_created_slug,
     start_import_record,
 )
+from app.llm.errors import is_infrastructure_error
+from app.llm.factory import get_llm_provider
 from app.models import (
     RecipeImportItem,
     RecipeImportJob,
@@ -64,7 +66,6 @@ from app.models import (
 from app.ollama_client import (
     OLLAMA_MODEL,
     OllamaClientError,
-    ollama_structured_chat,
 )
 from app.recipe_quality import apply_recipe_quality_gate
 
@@ -1096,7 +1097,7 @@ async def normalize_source_recipe(
         + content
     )
 
-    payload = await ollama_structured_chat(
+    payload = await get_llm_provider().structured_chat(
         system_prompt=SYSTEM_PROMPT,
         user_prompt=user_prompt,
         response_schema=schema,
@@ -1159,7 +1160,7 @@ async def normalize_source_recipe(
         )
 
         repaired_payload = (
-            await ollama_structured_chat(
+            await get_llm_provider().structured_chat(
                 system_prompt=(
                     "你是严格的 JSON 结构修复器。"
                     "只输出符合 Schema 的 JSON。"
@@ -3972,6 +3973,9 @@ def flatten_error_detail(
 def is_ollama_infrastructure_error(
     value: object,
 ) -> bool:
+    if is_infrastructure_error(value):
+        return True
+
     text = flatten_error_detail(
         value
     ).casefold()
@@ -4036,42 +4040,8 @@ def requeue_ollama_infrastructure_failures(
 
 
 async def unload_ollama_model() -> dict:
-    base_url = os.environ.get(
-        "OLLAMA_BASE_URL",
-        "http://127.0.0.1:11434",
-    ).rstrip("/")
-
     try:
-        async with httpx.AsyncClient(
-            timeout=30,
-        ) as client:
-            response = await client.post(
-                f"{base_url}/api/generate",
-                json={
-                    "model": OLLAMA_MODEL,
-                    "prompt": "",
-                    "stream": False,
-                    "keep_alive": 0,
-                },
-            )
-
-        if response.status_code >= 400:
-            return {
-                "succeeded": False,
-                "status_code": (
-                    response.status_code
-                ),
-                "error": response.text[:1000],
-            }
-
-        return {
-            "succeeded": True,
-            "model": OLLAMA_MODEL,
-            "message": (
-                "Ollama model unload "
-                "request completed."
-            ),
-        }
+        return await get_llm_provider().unload()
 
     except Exception as exc:
         return {

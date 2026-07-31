@@ -11,11 +11,12 @@ from pydantic import (
     ValidationError,
 )
 
+from app.llm.factory import get_llm_provider
+
 from app.ollama_client import (
     OLLAMA_BASE_URL,
     OLLAMA_MODEL,
     OllamaClientError,
-    ollama_structured_chat,
     ollama_tags,
 )
 
@@ -909,7 +910,7 @@ async def normalize_recipe(
     )
 
     try:
-        payload = await ollama_structured_chat(
+        payload = await get_llm_provider().structured_chat(
             system_prompt=SYSTEM_PROMPT,
             user_prompt=user_prompt,
             response_schema=schema,
