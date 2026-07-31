@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Targeted queued-item processing and rejected-item restoration to the review
+  API and UI.
+- Dry-run-first duplicate import resolution with structured audit fields.
+
+### Fixed
+
+- Treat skipped duplicate items as terminal when calculating job completion.
+
 ## [0.21.1] - 2026-08-01
 
 ### Added

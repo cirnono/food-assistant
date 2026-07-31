@@ -30,6 +30,17 @@ page. Major protected groups are:
 performs a minimal structured request, writes no database data, and returns
 provider, model, success, and latency. Errors are sanitized.
 
+Import item actions include:
+
+- `POST /api/v1/import-jobs/{job_id}/items/{item_id}/process` to process one
+  confirmed queued item without automatic import
+- `POST /api/v1/import-jobs/{job_id}/items/{item_id}/restore-rejected` to
+  return a confirmed rejected item to human review without calling the LLM
+
+Duplicate source revisions are resolved through the dry-run-first
+`app.maintenance.resolve_duplicate_import` CLI. It never decides from a recipe
+name or Mealie slug alone and never modifies an existing Mealie recipe.
+
 Consult `/docs` for current request and response schemas. Clients should treat
 5xx responses as retryable only when appropriate and should use import job and
 item identifiers to preserve idempotency.
