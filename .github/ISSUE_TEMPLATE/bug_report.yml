@@ -1,0 +1,52 @@
+name: Bug report
+description: Report a reproducible Food Assistant problem
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Never include tokens, authorization headers, private URLs, recipe data,
+        or unredacted logs.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      placeholder: 0.21.0
+    validations:
+      required: true
+  - type: dropdown
+    id: provider
+    attributes:
+      label: LLM provider
+      options:
+        - Ollama
+        - OpenAI-compatible
+        - Not related to LLM
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Description and reproduction
+      description: Use placeholders for all private values.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Sanitized diagnostics
+      render: shell
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety confirmation
+      options:
+        - label: I removed credentials, private addresses, and personal data.
+          required: true
