@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import httpx
@@ -74,6 +75,185 @@ async def test_ollama_structured_response(monkeypatch: pytest.MonkeyPatch) -> No
         system_prompt="system", user_prompt="user", response_schema=schema
     )
     assert NormalizedRecipe.model_validate(result).name == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ollama_falls_back_once_for_grammar_http_400(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[dict] = []
+    schema = NormalizedRecipe.model_json_schema()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx.Response(
+                400,
+                json={"error": "xgrammar: failed to parse JSON Schema grammar"},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "content": f"result: {json.dumps(valid_recipe_payload())}"
+                }
+            },
+        )
+
+    mock_client(monkeypatch, handler)
+    result = await OllamaProvider(settings()).structured_chat(
+        system_prompt="system", user_prompt="user", response_schema=schema
+    )
+
+    assert NormalizedRecipe.model_validate(result).name == "ok"
+    assert len(requests) == 2
+    assert requests[0]["format"] == schema
+    assert requests[1]["format"] == "json"
+    for key in ("model", "messages", "options", "think", "keep_alive", "stream"):
+        assert requests[1][key] == requests[0][key]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "detail"),
+    [
+        (400, "invalid value for num_ctx"),
+        (400, "model not found while initializing grammar"),
+        (400, "CUDA out of memory during grammar initialization"),
+        (401, "failed to parse JSON schema grammar"),
+        (403, "failed to parse JSON schema grammar"),
+        (404, "model not found: failed to initialize grammar"),
+        (500, "grammar initialization failed"),
+    ],
+)
+async def test_ollama_does_not_fallback_for_other_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    detail: str,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(status_code, json={"error": detail})
+
+    mock_client(monkeypatch, handler)
+    with pytest.raises(LLMProviderError):
+        await OllamaProvider(settings()).structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_ollama_does_not_fallback_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ReadTimeout("grammar initialization timed out", request=request)
+
+    mock_client(monkeypatch, handler)
+    with pytest.raises(LLMProviderError) as captured:
+        await OllamaProvider(settings()).structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert captured.value.infrastructure is True
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_ollama_fallback_failure_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            400,
+            json={"error": "grammar initialization failed"},
+        )
+
+    mock_client(monkeypatch, handler)
+    with pytest.raises(LLMProviderError):
+        await OllamaProvider(settings()).structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_ollama_fallback_warning_does_not_log_sensitive_input(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    prompt_secret = "sensitive-prompt-value"
+    schema_secret = "sensitive-schema-value"
+    token_secret = "sensitive-token-value"
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(400, json={"error": "unable to parse schema grammar"})
+        return httpx.Response(200, json={"message": {"content": '{"ok": true}'}})
+
+    mock_client(monkeypatch, handler)
+    result = await OllamaProvider(settings(api_key=token_secret)).structured_chat(
+        system_prompt=prompt_secret,
+        user_prompt=prompt_secret,
+        response_schema={"description": schema_secret},
+    )
+    assert result == {"ok": True}
+    assert (
+        "Ollama rejected the supplied JSON Schema; falling back to JSON mode."
+        in caplog.text
+    )
+    for secret in (prompt_secret, schema_secret, token_secret):
+        assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ollama_json_mode_result_still_requires_caller_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid = valid_recipe_payload()
+    invalid["ingredients"] = []
+    invalid["instructions"] = []
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(400, json={"error": "failed to parse schema grammar"})
+        return httpx.Response(
+            200,
+            json={"message": {"content": f"prefix {json.dumps(invalid)} suffix"}},
+        )
+
+    mock_client(monkeypatch, handler)
+    result = await OllamaProvider(settings()).structured_chat(
+        system_prompt="system",
+        user_prompt="user",
+        response_schema=NormalizedRecipe.model_json_schema(),
+    )
+    assert result["ingredients"] == []
+    with pytest.raises(ValueError):
+        NormalizedRecipe.model_validate(result)
 
 
 def valid_recipe_payload() -> dict:
