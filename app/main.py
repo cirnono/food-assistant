@@ -13,13 +13,18 @@ from app.database import (
     init_database,
 )
 from app.inventory import router as inventory_router
+from app.ingredient_aliases import router as ingredient_aliases_router
+from app.cooking_history import router as cooking_history_router
+from app.pantry_ui import router as pantry_ui_router
 from app.github_sources import router as github_sources_router
 from app.import_queue import router as import_queue_router
 from app.ai_recipes import router as ai_recipes_router
 from app.mealie_client import (
     MEALIE_BASE_URL,
+    close_mealie_client,
     decode_response,
     mealie_get,
+    start_mealie_client,
 )
 from app.recommendations import (
     router as recommendations_router,
@@ -27,7 +32,7 @@ from app.recommendations import (
 from app.system_api import router as system_router
 
 
-APP_VERSION = "0.21.1"
+APP_VERSION = "0.22.0"
 
 
 @asynccontextmanager
@@ -35,7 +40,11 @@ async def lifespan(application: FastAPI):
     del application
 
     init_database()
-    yield
+    await start_mealie_client()
+    try:
+        yield
+    finally:
+        await close_mealie_client()
 
 
 app = FastAPI(
@@ -50,6 +59,9 @@ app = FastAPI(
 
 app.include_router(inventory_router)
 app.include_router(recommendations_router)
+app.include_router(ingredient_aliases_router)
+app.include_router(cooking_history_router)
+app.include_router(pantry_ui_router)
 app.include_router(ai_recipes_router)
 app.include_router(github_sources_router)
 app.include_router(import_queue_router)
@@ -73,6 +85,9 @@ async def root() -> dict[str, Any]:
             "recommendation_preview": (
                 "/api/v1/recommendations/preview"
             ),
+            "recommendations": "/api/v1/recommendations",
+            "pantry_ui": "/pantry",
+            "recommendations_ui": "/recommendations",
             "mealie_status": (
                 "/api/v1/integrations/mealie/status"
             ),

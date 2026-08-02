@@ -12,3 +12,4 @@ os.environ.setdefault(
 os.environ.setdefault(
     "FOOD_ASSISTANT_API_TOKEN", "example-development-token-00000000"
 )
+os.environ.setdefault("MEALIE_TOKEN", "example-test-mealie-token")

@@ -4,12 +4,17 @@ Copy `.env.example` to `.env`. Never commit `.env` or secret files.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `APP_VERSION` | Reported application version | `0.21.1` |
+| `APP_VERSION` | Reported application version | `0.22.0` |
 | `FOOD_ASSISTANT_DATA_DIR` | Host persistence directory for Compose | `./data` |
 | `DATABASE_URL` | SQLAlchemy database URL | SQLite under `/data` |
 | `FOOD_ASSISTANT_API_TOKEN[_FILE]` | API authentication | required |
 | `FOOD_ASSISTANT_API_TOKEN_HOST_FILE` | Host file mounted by `compose.auth.yaml` | `./secrets/food_assistant_api_token` |
 | `MEALIE_BASE_URL` | Mealie origin | host gateway example |
+| `MEALIE_TIMEOUT_SECONDS` | Mealie response read timeout | `90` |
+| `MEALIE_CONNECT_TIMEOUT_SECONDS` | Mealie connection timeout | `5` |
+| `MEALIE_WRITE_TIMEOUT_SECONDS` | Mealie request write timeout | `10` |
+| `MEALIE_POOL_TIMEOUT_SECONDS` | Mealie connection-pool wait timeout | `10` |
+| `MEALIE_RECOMMENDATION_CONCURRENCY` | Concurrent recipe detail reads (clamped to 1–20) | `8` |
 | `MEALIE_TOKEN[_FILE]` | Mealie credential | required for imports |
 | `MEALIE_TOKEN_HOST_FILE` | Host file mounted by `compose.auth.yaml` | `./secrets/mealie_token` |
 | `LLM_PROVIDER` | `ollama` or `openai_compatible` | `ollama` |

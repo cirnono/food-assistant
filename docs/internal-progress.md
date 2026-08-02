@@ -6,7 +6,7 @@ bodies here.
 
 ## Current baseline
 
-- Target release: `0.21.1`
+- Target release: `0.22.0`
 - Starting application version: `0.20.1`
 - Branch: `main`
 - Existing phase commit: `18b05c9 chore: initialize public repository hygiene`

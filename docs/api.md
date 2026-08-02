@@ -44,3 +44,18 @@ name or Mealie slug alone and never modifies an existing Mealie recipe.
 Consult `/docs` for current request and response schemas. Clients should treat
 5xx responses as retryable only when appropriate and should use import job and
 item identifiers to preserve idempotency.
+# Pantry and recommendations
+
+Authenticated pantry endpoints are available at `/api/v1/inventory`, including
+`/summary` and the `/{id}/consume`, `/{id}/restock`, and `/{id}/open` actions.
+An omitted quantity means the item is known to be available without an exact
+count; zero means out of stock.
+
+`GET /api/v1/recommendations` returns `ready_now`, `missing_one_or_two`,
+`use_soon`, and `random_pick` groups. Every result includes ingredient matches,
+missing ingredients, expiry matches, score reasons, timing, classification, and
+a Mealie link. The old `/preview` endpoint remains available but is deprecated.
+
+Ingredient aliases are managed under `/api/v1/ingredient-aliases`, and cooking
+history under `/api/v1/cooking-history`. All `/api/v1/*` routes require the Food
+Assistant API token.

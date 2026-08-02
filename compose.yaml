@@ -5,7 +5,7 @@ services:
       args:
         APP_UID: ${APP_UID:-1000}
         APP_GID: ${APP_GID:-1000}
-    image: ${FOOD_ASSISTANT_IMAGE:-local/food-assistant:0.21.1}
+    image: ${FOOD_ASSISTANT_IMAGE:-local/food-assistant:0.22.0}
     container_name: ${FOOD_ASSISTANT_CONTAINER_NAME:-food-assistant}
     restart: unless-stopped
     init: true
@@ -13,7 +13,7 @@ services:
     ports:
       - "${FOOD_ASSISTANT_PORT:-8787}:8000"
     environment:
-      APP_VERSION: ${APP_VERSION:-0.21.1}
+      APP_VERSION: ${APP_VERSION:-0.22.0}
       TZ: ${TZ:-UTC}
       DATA_DIR: /data
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/food-assistant.db}
@@ -23,6 +23,10 @@ services:
       MEALIE_TOKEN: ${MEALIE_TOKEN:-}
       MEALIE_TOKEN_FILE: ${MEALIE_TOKEN_FILE:-}
       MEALIE_TIMEOUT_SECONDS: ${MEALIE_TIMEOUT_SECONDS:-90}
+      MEALIE_CONNECT_TIMEOUT_SECONDS: ${MEALIE_CONNECT_TIMEOUT_SECONDS:-5}
+      MEALIE_WRITE_TIMEOUT_SECONDS: ${MEALIE_WRITE_TIMEOUT_SECONDS:-10}
+      MEALIE_POOL_TIMEOUT_SECONDS: ${MEALIE_POOL_TIMEOUT_SECONDS:-10}
+      MEALIE_RECOMMENDATION_CONCURRENCY: ${MEALIE_RECOMMENDATION_CONCURRENCY:-8}
       LLM_PROVIDER: ${LLM_PROVIDER:-}
       LLM_BASE_URL: ${LLM_BASE_URL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}

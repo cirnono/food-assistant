@@ -74,6 +74,23 @@ def init_database() -> None:
 def ensure_schema_migrations() -> None:
     """Apply small SQLite migrations for existing installations."""
     with engine.begin() as connection:
+        pantry_rows = connection.exec_driver_sql(
+            "PRAGMA table_info(pantry_items)"
+        ).fetchall()
+        pantry_columns = {str(row[1]) for row in pantry_rows}
+        pantry_additions = {
+            "normalized_name": "VARCHAR(160)",
+            "low_stock_threshold": "FLOAT",
+            "purchased_at": "DATE",
+            "opened_at": "DATE",
+            "mealie_food_id": "VARCHAR(255)",
+        }
+        for column_name, column_type in pantry_additions.items():
+            if pantry_rows and column_name not in pantry_columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE pantry_items ADD COLUMN {column_name} {column_type}"
+                )
+
         rows = connection.exec_driver_sql(
             "PRAGMA table_info(source_recipes)"
         ).fetchall()
