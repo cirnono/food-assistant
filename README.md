@@ -18,6 +18,7 @@ Mealie imports, and APIs suitable for Home Assistant automations.
 - Responsive pantry management at `/pantry` and explainable recommendations at
   `/recommendations`
 - Native Home Assistant REST/package and Lovelace bridge examples
+- Persistent step-by-step cooking sessions and durable multi-timers at `/cook`
 - API-token authentication for all `/api/v1/*` endpoints
 - SQLite persistence and Docker Compose deployment
 
@@ -66,10 +67,13 @@ docker compose up -d --build
 Open `http://localhost:8787/review`. Protect this page with HTTPS and reverse
 proxy authentication before exposing it outside a trusted network.
 
-The pantry and recommendation pages ask for the Food Assistant API token and
+The pantry, recommendation, and cooking pages ask for the Food Assistant API token and
 store it in browser local storage. They never request or expose an LLM API key.
 The pantry distinguishes unknown quantity (available) from zero (out of stock),
 and expired items remain visible while being excluded from recommendations.
+Cooking sessions keep a stable recipe snapshot, checked ingredients, step
+progress, and deadline-based timers across browser or service restarts. Finishing
+a session records cooking history but never changes pantry quantities.
 
 ## Provider examples
 
