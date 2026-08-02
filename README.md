@@ -15,6 +15,8 @@ Mealie imports, and APIs suitable for Home Assistant automations.
 - Human review at `/review`, optional automatic approval, and batch processing
 - Idempotent Mealie import with read-back verification and retries
 - Inventory and meal recommendation APIs for Home Assistant
+- Responsive pantry management at `/pantry` and explainable recommendations at
+  `/recommendations`
 - API-token authentication for all `/api/v1/*` endpoints
 - SQLite persistence and Docker Compose deployment
 
@@ -62,6 +64,11 @@ docker compose up -d --build
 
 Open `http://localhost:8787/review`. Protect this page with HTTPS and reverse
 proxy authentication before exposing it outside a trusted network.
+
+The pantry and recommendation pages ask for the Food Assistant API token and
+store it in browser local storage. They never request or expose an LLM API key.
+The pantry distinguishes unknown quantity (available) from zero (out of stock),
+and expired items remain visible while being excluded from recommendations.
 
 ## Provider examples
 

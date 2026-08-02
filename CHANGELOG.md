@@ -6,8 +6,15 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] - 2026-08-02
+
 ### Added
 
+- Responsive pantry management and explainable recipe recommendation pages.
+- Pantry lifecycle fields, low-stock reporting, and consume/restock/open actions.
+- User-managed ingredient aliases and cooking history APIs.
+- Recommendation v2 with complete Mealie pagination, bounded detail concurrency,
+  expiry priority, recent-cooking penalty, and transparent score reasons.
 - Targeted queued-item processing and rejected-item restoration to the review
   API and UI.
 - Dry-run-first duplicate import resolution with structured audit fields.
@@ -53,6 +60,7 @@ All notable changes to this project are documented here. The format follows
 - Excluded local secrets, databases, runtime data, source clones, logs, and
   backups from the public repository.
 
-[Unreleased]: https://github.com/cirnono/food-assistant/compare/v0.21.1...HEAD
+[Unreleased]: https://github.com/cirnono/food-assistant/compare/v0.22.0...HEAD
+[0.22.0]: https://github.com/cirnono/food-assistant/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/cirnono/food-assistant/compare/v0.21.0...v0.21.1
 [0.21.0]: https://github.com/cirnono/food-assistant/releases/tag/v0.21.0
