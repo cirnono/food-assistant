@@ -208,6 +208,37 @@ def test_home_assistant_yaml_examples_parse_and_contain_no_credentials():
         assert "example-development-token" not in text
 
 
+def _walk_yaml(value):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_yaml(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_yaml(child)
+
+
+def test_lovelace_native_actions_and_conditions_are_valid():
+    path = "integrations/home-assistant/lovelace-kitchen.yaml.example"
+    with open(path, encoding="utf-8") as file:
+        payload = yaml.load(file, Loader=SecretLoader)
+    mappings = list(_walk_yaml(payload))
+    actions = [mapping["tap_action"] for mapping in mappings if "tap_action" in mapping]
+    assert actions
+    for action in actions:
+        serialized = yaml.safe_dump(action, allow_unicode=True)
+        assert "{{" not in serialized
+        assert "{%" not in serialized
+    conditional_cards = [
+        mapping for mapping in mappings
+        if mapping.get("type") == "conditional"
+    ]
+    assert conditional_cards
+    for card in conditional_cards:
+        assert card["conditions"]
+        assert all(condition.get("condition") == "state" for condition in card["conditions"])
+
+
 def test_selection_tables_are_added_without_touching_old_rows(tmp_path):
     engine = create_engine(f"sqlite:///{tmp_path}/old.db")
     with engine.begin() as connection:

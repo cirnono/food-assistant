@@ -59,3 +59,10 @@ friendly empty and unavailable states.
 
 Polling never changes a valid selection. Only explicit next/cooked actions, a
 missing recipe, or a newly violated hard filter changes it.
+
+`ready_now` can legitimately contain only one candidate, so “换一道” may have
+no different recipe to select. To use a broader queue, change the `mode` query
+parameter in `food_assistant_state_url` and the `mode` field in the
+`food_assistant_next_recipe` payload together. Supported alternatives include
+`missing_one_or_two` and `use_soon`; keeping both locations aligned preserves a
+stable selection and makes the next action use the same recommendation group.
