@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import random
 import time
@@ -25,9 +26,33 @@ router = APIRouter(prefix="/api/v1/recommendations", tags=["recommendations"])
 SCORE = {"coverage": 100, "expiring": 15, "missing_main": -20, "missing_regular": -6, "recent": -25}
 PAGE_SIZE = 100
 MAX_RECIPE_PAGES = 100
-SUCCESS_CACHE_TTL_SECONDS = 15 * 60
+DEFAULT_RECIPE_CACHE_TTL_SECONDS = 21_600
+MIN_RECIPE_CACHE_TTL_SECONDS = 300
+MAX_RECIPE_CACHE_TTL_SECONDS = 86_400
 ERROR_CACHE_TTL_SECONDS = 30
 TOOLS = {"锅", "炒锅", "烤箱", "刀", "菜刀", "砧板", "搅拌碗", "打蛋器", "料理机", "设备", "工具"}
+
+logger = logging.getLogger(__name__)
+
+
+def _configured_recipe_cache_ttl_seconds() -> int:
+    raw_value = os.environ.get("MEALIE_RECIPE_CACHE_TTL_SECONDS")
+    if raw_value is None:
+        return DEFAULT_RECIPE_CACHE_TTL_SECONDS
+    try:
+        value = int(raw_value)
+    except ValueError:
+        value = 0
+    if MIN_RECIPE_CACHE_TTL_SECONDS <= value <= MAX_RECIPE_CACHE_TTL_SECONDS:
+        return value
+    logger.warning(
+        "Invalid MEALIE_RECIPE_CACHE_TTL_SECONDS; using safe default %s",
+        DEFAULT_RECIPE_CACHE_TTL_SECONDS,
+    )
+    return DEFAULT_RECIPE_CACHE_TTL_SECONDS
+
+
+SUCCESS_CACHE_TTL_SECONDS = _configured_recipe_cache_ttl_seconds()
 
 
 def _recommendation_concurrency() -> int:

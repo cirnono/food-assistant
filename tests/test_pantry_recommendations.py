@@ -147,7 +147,11 @@ def test_inventory_crud_actions_auth_and_pages():
         assert {"available_items", "out_of_stock_items", "low_stock_items"} <= summary.keys()
         assert client.delete(f"/api/v1/inventory/{item_id}", headers=TOKEN).status_code == 204
         assert "库存管理" in client.get("/pantry").text
-        assert "现在就能做" in client.get("/recommendations").text
+        recommendations_page = client.get("/recommendations").text
+        assert "现在就能做" in recommendations_page
+        assert "符合筛选" in recommendations_page
+        assert "成功评分数" not in recommendations_page
+        assert "刷新菜谱缓存" in recommendations_page
 
 
 def test_old_database_migration_is_idempotent(tmp_path, monkeypatch):
