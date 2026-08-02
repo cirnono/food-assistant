@@ -17,6 +17,7 @@ Mealie imports, and APIs suitable for Home Assistant automations.
 - Inventory and meal recommendation APIs for Home Assistant
 - Responsive pantry management at `/pantry` and explainable recommendations at
   `/recommendations`
+- Native Home Assistant REST/package and Lovelace bridge examples
 - API-token authentication for all `/api/v1/*` endpoints
 - SQLite persistence and Docker Compose deployment
 
@@ -145,6 +146,7 @@ DeepSeek, OpenAI, OpenRouter, LM Studio, vLLM, LiteLLM, or their maintainers.
 - [API](docs/api.md)
 - [Privacy](docs/privacy.md)
 - [Troubleshooting](docs/troubleshooting.md)
+- [Home Assistant bridge](docs/home-assistant.md)
 
 ## Roadmap
 

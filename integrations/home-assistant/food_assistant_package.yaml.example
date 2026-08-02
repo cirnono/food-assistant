@@ -1,0 +1,104 @@
+sensor:
+  - platform: rest
+    name: Food Assistant
+    unique_id: food_assistant
+    resource: !secret food_assistant_state_url
+    headers:
+      Authorization: !secret food_assistant_authorization
+      Accept: application/json
+    value_template: "{{ value_json.status | default('unavailable') }}"
+    json_attributes: [inventory, recommendations, selected_recipe, links, generated_at]
+    scan_interval: 300
+    timeout: 120
+
+template:
+  - sensor:
+      - name: Food Assistant Inventory Total
+        unique_id: food_assistant_inventory_total
+        state: "{{ state_attr('sensor.food_assistant', 'inventory').total | default(0) }}"
+      - name: Food Assistant Expiring
+        unique_id: food_assistant_expiring
+        state: "{{ state_attr('sensor.food_assistant', 'inventory').expiring | default(0) }}"
+      - name: Food Assistant Expired
+        unique_id: food_assistant_expired
+        state: "{{ state_attr('sensor.food_assistant', 'inventory').expired | default(0) }}"
+      - name: Food Assistant Out Of Stock
+        unique_id: food_assistant_out_of_stock
+        state: "{{ state_attr('sensor.food_assistant', 'inventory').out_of_stock | default(0) }}"
+      - name: Food Assistant Ready Now Count
+        unique_id: food_assistant_ready_now_count
+        state: "{{ state_attr('sensor.food_assistant', 'recommendations').ready_now_count | default(0) }}"
+      - name: Food Assistant Recipe
+        unique_id: food_assistant_recipe
+        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').name | default('暂无推荐') }}"
+        attributes:
+          missing: "{{ state_attr('sensor.food_assistant', 'selected_recipe').missing_ingredients | default([]) }}"
+          expiring: "{{ state_attr('sensor.food_assistant', 'selected_recipe').expiring_inventory_matches | default([]) }}"
+          total_time: "{{ state_attr('sensor.food_assistant', 'selected_recipe').total_time_minutes | default(none) }}"
+      - name: Food Assistant Recipe Score
+        unique_id: food_assistant_recipe_score
+        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').score | default(0) }}"
+      - name: Food Assistant Recipe Coverage
+        unique_id: food_assistant_recipe_coverage
+        unit_of_measurement: "%"
+        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').coverage_percent | default(0) }}"
+      - name: Food Assistant Recipe Missing
+        unique_id: food_assistant_recipe_missing
+        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').missing_ingredients | default([]) | join('、') }}"
+      - name: Food Assistant Recipe URL
+        unique_id: food_assistant_recipe_url
+        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').mealie_url | default('') }}"
+      - name: Food Assistant Pantry URL
+        unique_id: food_assistant_pantry_url
+        state: "{{ state_attr('sensor.food_assistant', 'links').pantry | default('') }}"
+      - name: Food Assistant Recommendations URL
+        unique_id: food_assistant_recommendations_url
+        state: "{{ state_attr('sensor.food_assistant', 'links').recommendations | default('') }}"
+
+rest_command:
+  food_assistant_next_recipe:
+    url: !secret food_assistant_next_url
+    method: POST
+    headers: &auth_headers
+      Authorization: !secret food_assistant_authorization
+      Content-Type: application/json
+    payload: >-
+      {"owner":"household","mode":"ready_now","max_missing":2,
+      "max_total_time":null,"category":null,"cuisine":null,
+      "confirm_owner":"household"}
+  food_assistant_mark_cooked:
+    url: !secret food_assistant_mark_cooked_url
+    method: POST
+    headers: *auth_headers
+    payload: >-
+      {"owner":"household","confirm_slug":
+      {{ state_attr('sensor.food_assistant', 'selected_recipe').slug | tojson }},
+      "servings":null,"rating":null,"notes":null,"select_next":true}
+  food_assistant_refresh:
+    url: !secret food_assistant_refresh_url
+    method: POST
+    headers: *auth_headers
+    payload: '{"owner":"household","refresh_recipe_cache":false}'
+
+script:
+  food_assistant_next_recipe:
+    alias: Food Assistant 换一道
+    sequence: &refresh_sequence
+      - action: rest_command.food_assistant_next_recipe
+      - delay: "00:00:02"
+      - action: homeassistant.update_entity
+        target: {entity_id: sensor.food_assistant}
+  food_assistant_mark_cooked:
+    alias: Food Assistant 标记今天做了
+    sequence:
+      - action: rest_command.food_assistant_mark_cooked
+      - delay: "00:00:02"
+      - action: homeassistant.update_entity
+        target: {entity_id: sensor.food_assistant}
+  food_assistant_refresh:
+    alias: Food Assistant 刷新
+    sequence:
+      - action: rest_command.food_assistant_refresh
+      - delay: "00:00:02"
+      - action: homeassistant.update_entity
+        target: {entity_id: sensor.food_assistant}
