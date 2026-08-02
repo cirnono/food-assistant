@@ -134,6 +134,31 @@ class CookingHistory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
+class HomeAssistantSelection(Base):
+    __tablename__ = "home_assistant_selections"
+    __table_args__ = (UniqueConstraint("owner", name="uq_home_assistant_selection_owner"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    owner: Mapped[str] = mapped_column(String(40), nullable=False, unique=True, index=True)
+    mode: Mapped[str] = mapped_column(String(40), nullable=False, default="ready_now")
+    selected_slug: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    selected_name: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    selected_payload_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    filters_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    seed: Mapped[int | None] = mapped_column(nullable=True)
+    selected_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class HomeAssistantSelectionHistory(Base):
+    __tablename__ = "home_assistant_selection_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    owner: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    mealie_slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+
+
 class RecipeSource(Base):
     __tablename__ = "recipe_sources"
 
