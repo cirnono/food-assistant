@@ -12,7 +12,7 @@ import app.home_assistant as bridge
 from app.api_auth import read_api_token
 from app.database import Base, get_db
 from app.main import app
-from app.models import CookingHistory, HomeAssistantSelection
+from app.models import CookingHistory, CookingSession, HomeAssistantSelection
 
 
 TOKEN = {"X-Food-Assistant-Token": "example-development-token-00000000"}
@@ -78,6 +78,24 @@ def test_state_requires_auth_and_is_stable_without_secret_leak(bridge_client):
     assert second.json()["selected_recipe"]["slug"] == "a"
     assert "example-development-token" not in second.text
     assert session.scalar(select(func.count()).select_from(HomeAssistantSelection)) == 1
+
+
+def test_state_includes_lightweight_active_cooking(bridge_client):
+    client, session = bridge_client
+    session.add(CookingSession(
+        owner="household",
+        mealie_slug="a",
+        recipe_name="A",
+        recipe_snapshot_json='{"instructions":[{"text":"cook"}]}',
+        status="active",
+        current_step_index=0,
+        checked_ingredients_json="[]",
+    ))
+    session.commit()
+    response = client.get("/api/v1/home-assistant/state", headers=TOKEN)
+    assert response.status_code == 200
+    assert response.json()["active_cooking"]["status"] == "active"
+    assert response.json()["active_cooking"]["session_id"] is not None
 
 
 def test_next_avoids_repeat_and_owners_are_independent(bridge_client):
@@ -206,6 +224,27 @@ def test_home_assistant_yaml_examples_parse_and_contain_no_credentials():
         assert "10.0." not in text
         assert "X-Food-Assistant-Token" not in text
         assert "example-development-token" not in text
+
+
+def test_home_assistant_package_has_cooking_sensor_actions_and_scripts():
+    with open(
+        "integrations/home-assistant/food_assistant_package.yaml.example",
+        encoding="utf-8",
+    ) as file:
+        payload = yaml.load(file, Loader=SecretLoader)
+    rest_sensors = payload["sensor"]
+    cooking_sensor = next(item for item in rest_sensors if item["name"] == "Food Assistant Cooking")
+    assert cooking_sensor["scan_interval"] == 10
+    for name in (
+        "food_assistant_start_cooking",
+        "food_assistant_next_step",
+        "food_assistant_previous_step",
+        "food_assistant_finish_cooking",
+        "food_assistant_cancel_cooking",
+    ):
+        assert name in payload["rest_command"]
+        assert name in payload["script"]
+        assert "confirm_" in payload["rest_command"][name]["payload"]
 
 
 def _walk_yaml(value):
