@@ -21,8 +21,10 @@ from app.import_queue import router as import_queue_router
 from app.ai_recipes import router as ai_recipes_router
 from app.mealie_client import (
     MEALIE_BASE_URL,
+    close_mealie_client,
     decode_response,
     mealie_get,
+    start_mealie_client,
 )
 from app.recommendations import (
     router as recommendations_router,
@@ -38,7 +40,11 @@ async def lifespan(application: FastAPI):
     del application
 
     init_database()
-    yield
+    await start_mealie_client()
+    try:
+        yield
+    finally:
+        await close_mealie_client()
 
 
 app = FastAPI(

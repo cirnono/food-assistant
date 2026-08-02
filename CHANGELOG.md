@@ -6,6 +6,14 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Reuse a lifespan-managed Mealie connection pool for recommendation requests.
+- Isolate per-recipe detail failures and cache successful and failed detail
+  reads across recommendation requests.
+- Bound and de-duplicate Mealie pagination to prevent malformed metadata from
+  causing repeated or unbounded page reads.
+
 ## [0.22.0] - 2026-08-02
 
 ### Added

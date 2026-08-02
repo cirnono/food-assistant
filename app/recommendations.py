@@ -1,27 +1,76 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import random
+import time
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.ingredient_names import alias_map, canonicalize, normalize_name
 from app.ingredient_policy import inventory_policy_for_food
-from app.mealie_client import MEALIE_BASE_URL, decode_response, mealie_get, raise_for_mealie_error
+from app.mealie_client import MEALIE_BASE_URL, mealie_get, raise_for_mealie_error
 from app.models import CookingHistory, PantryItem
 
 
 router = APIRouter(prefix="/api/v1/recommendations", tags=["recommendations"])
 
 SCORE = {"coverage": 100, "expiring": 15, "missing_main": -20, "missing_regular": -6, "recent": -25}
-DETAIL_CONCURRENCY = 5
 PAGE_SIZE = 100
+MAX_RECIPE_PAGES = 100
+SUCCESS_CACHE_TTL_SECONDS = 15 * 60
+ERROR_CACHE_TTL_SECONDS = 30
 TOOLS = {"锅", "炒锅", "烤箱", "刀", "菜刀", "砧板", "搅拌碗", "打蛋器", "料理机", "设备", "工具"}
+
+
+def _recommendation_concurrency() -> int:
+    try:
+        value = int(os.environ.get("MEALIE_RECOMMENDATION_CONCURRENCY", "8"))
+    except ValueError:
+        return 8
+    return min(20, max(1, value))
+
+
+@dataclass(frozen=True)
+class RecipeCacheEntry:
+    detail: dict[str, Any] | None
+    error: str | None
+    expires_at: float
+
+
+@dataclass
+class CacheDiagnostics:
+    hits: int = 0
+    misses: int = 0
+    errors: int = 0
+
+
+_recipe_cache: dict[str, RecipeCacheEntry] = {}
+_recipe_inflight: dict[str, asyncio.Task[tuple[dict[str, Any] | None, str | None]]] = {}
+_recipe_cache_lock = asyncio.Lock()
+
+
+async def clear_recipe_detail_cache() -> None:
+    """Clear only in-process recipe details; inventory data is untouched."""
+    async with _recipe_cache_lock:
+        _recipe_cache.clear()
+        _recipe_inflight.clear()
+
+
+async def recipe_cache_size() -> int:
+    now = time.monotonic()
+    async with _recipe_cache_lock:
+        expired = [slug for slug, entry in _recipe_cache.items() if entry.expires_at <= now]
+        for slug in expired:
+            _recipe_cache.pop(slug, None)
+        return len(_recipe_cache)
 
 
 def normalize_text(value: Any) -> str:
@@ -41,8 +90,15 @@ def extract_page_items(payload: Any) -> list[dict[str, Any]]:
 def has_next_page(payload: Any, page: int, count: int) -> bool:
     if not isinstance(payload, dict):
         return count >= PAGE_SIZE
-    if isinstance(payload.get("next"), (str, int)) or payload.get("next") is True:
-        return True
+    if "next" in payload:
+        next_value = payload.get("next")
+        if next_value is True:
+            return True
+        if isinstance(next_value, str):
+            return bool(next_value.strip())
+        if isinstance(next_value, int) and not isinstance(next_value, bool):
+            return next_value > page
+        return False
     total_pages = payload.get("total_pages", payload.get("totalPages"))
     if isinstance(total_pages, int):
         return page < total_pages
@@ -105,27 +161,96 @@ def inventory_matches_ingredient(inventory_name: str, ingredient_text: str, alia
     return bool(left and right and (left == right or (len(left) >= 2 and left in right) or (len(right) >= 2 and right in left)))
 
 
+def _detail_error(slug: str, error_type: str, status_code: int | None = None) -> str:
+    summary = f"slug={slug} type={error_type}"
+    return f"{summary} upstream_status={status_code}" if status_code is not None else summary
+
+
 async def fetch_recipe_detail(slug: str, semaphore: asyncio.Semaphore) -> tuple[dict[str, Any] | None, str | None]:
-    async with semaphore:
-        response = await mealie_get(f"/api/recipes/{slug}")
-    if not response.is_success:
-        return None, f"HTTP {response.status_code}"
-    payload = decode_response(response)
-    return (payload, None) if isinstance(payload, dict) else (None, "Unexpected recipe response")
+    try:
+        async with semaphore:
+            response = await mealie_get(f"/api/recipes/{slug}")
+        if not response.is_success:
+            return None, _detail_error(slug, "UpstreamHTTPError", response.status_code)
+        try:
+            payload = response.json()
+        except ValueError:
+            return None, _detail_error(slug, "InvalidJSON", response.status_code)
+        if not isinstance(payload, dict):
+            return None, _detail_error(slug, "UnexpectedResponse", response.status_code)
+        return payload, None
+    except HTTPException as exc:
+        upstream_status = exc.status_code
+        if isinstance(exc.detail, dict):
+            value = exc.detail.get("upstream_http_status")
+            if isinstance(value, int):
+                upstream_status = value
+        return None, _detail_error(slug, "HTTPException", upstream_status)
+    except httpx.TimeoutException:
+        return None, _detail_error(slug, "Timeout")
+    except httpx.RequestError:
+        return None, _detail_error(slug, "RequestError")
+    except (TypeError, ValueError):
+        return None, _detail_error(slug, "InvalidResponse")
+    except Exception as exc:
+        # A single malformed or unavailable recipe must not abort the batch.
+        # Only the exception type is exposed; messages may contain request data.
+        return None, _detail_error(slug, exc.__class__.__name__)
+
+
+async def _fetch_cached_detail(slug: str, semaphore: asyncio.Semaphore, diagnostics: CacheDiagnostics) -> tuple[dict[str, Any] | None, str | None]:
+    now = time.monotonic()
+    async with _recipe_cache_lock:
+        entry = _recipe_cache.get(slug)
+        if entry is not None and entry.expires_at > now:
+            diagnostics.hits += 1
+            diagnostics.errors += int(entry.error is not None)
+            return entry.detail, entry.error
+        _recipe_cache.pop(slug, None)
+        task = _recipe_inflight.get(slug)
+        if task is None:
+            diagnostics.misses += 1
+            task = asyncio.create_task(fetch_recipe_detail(slug, semaphore))
+            _recipe_inflight[slug] = task
+        else:
+            diagnostics.hits += 1
+
+    detail, error = await asyncio.shield(task)
+    diagnostics.errors += int(error is not None)
+    async with _recipe_cache_lock:
+        ttl = ERROR_CACHE_TTL_SECONDS if error else SUCCESS_CACHE_TTL_SECONDS
+        _recipe_cache[slug] = RecipeCacheEntry(detail, error, time.monotonic() + ttl)
+        if _recipe_inflight.get(slug) is task:
+            _recipe_inflight.pop(slug, None)
+    return detail, error
 
 
 async def fetch_all_summaries() -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
+    seen_slugs: set[str] = set()
     page = 1
-    while True:
+    while page <= MAX_RECIPE_PAGES:
         response = await mealie_get("/api/recipes", params={"page": page, "perPage": PAGE_SIZE, "orderBy": "name", "orderDirection": "asc"})
         raise_for_mealie_error(response, "Unable to retrieve Mealie recipes")
-        payload = decode_response(response)
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise HTTPException(status_code=502, detail="Mealie recipe list returned invalid JSON") from exc
         items = extract_page_items(payload)
-        result.extend(items)
+        new_items = []
+        for item in items:
+            slug = item.get("slug")
+            if not isinstance(slug, str) or not slug or slug in seen_slugs:
+                continue
+            seen_slugs.add(slug)
+            new_items.append(item)
+        result.extend(new_items)
+        if items and not new_items:
+            return result
         if not has_next_page(payload, page, len(items)) or not items:
             return result
         page += 1
+    return result
 
 
 def _text_value(recipe: dict[str, Any], key: str) -> str | None:
@@ -146,21 +271,26 @@ def _minutes(recipe: dict[str, Any]) -> int | None:
     return int((prep or 0) + (perform or 0)) if isinstance(prep, (int, float)) and isinstance(perform, (int, float)) else None
 
 
-async def build_recommendations(db: Session, *, limit: int, max_missing: int, max_total_time: int | None, category: str | None, cuisine: str | None, owner: str | None, use_expiring: bool, randomize: bool, seed: int | None) -> dict[str, Any]:
+async def build_recommendations(db: Session, *, limit: int, max_missing: int, max_total_time: int | None, category: str | None, cuisine: str | None, owner: str | None, use_expiring: bool, randomize: bool, seed: int | None, refresh_cache: bool = False) -> dict[str, Any]:
+    total_started = time.perf_counter()
+    if refresh_cache:
+        await clear_recipe_detail_cache()
     today = date.today()
     inventory = list(db.scalars(select(PantryItem).where(or_(PantryItem.expires_at.is_(None), PantryItem.expires_at >= today), or_(PantryItem.quantity.is_(None), PantryItem.quantity > 0), *((PantryItem.owner == owner,) if owner else ())).order_by(PantryItem.name)).all())
     aliases = alias_map(db)
+    summary_started = time.perf_counter()
     summaries = await fetch_all_summaries()
-    semaphore = asyncio.Semaphore(DETAIL_CONCURRENCY)
-    cache: dict[str, tuple[dict[str, Any] | None, str | None]] = {}
-
-    async def cached(slug: str) -> tuple[dict[str, Any] | None, str | None]:
-        if slug not in cache:
-            cache[slug] = await fetch_recipe_detail(slug, semaphore)
-        return cache[slug]
-
+    summary_fetch_ms = round((time.perf_counter() - summary_started) * 1000, 1)
+    semaphore = asyncio.Semaphore(_recommendation_concurrency())
+    cache_diagnostics = CacheDiagnostics()
     valid = [(s, str(s.get("slug", ""))) for s in summaries if s.get("slug")]
-    details = await asyncio.gather(*(cached(slug) for _, slug in valid))
+    detail_started = time.perf_counter()
+    details = await asyncio.gather(*(
+        _fetch_cached_detail(slug, semaphore, cache_diagnostics)
+        for _, slug in valid
+    ))
+    detail_fetch_ms = round((time.perf_counter() - detail_started) * 1000, 1)
+    scoring_started = time.perf_counter()
     recent_cutoff = today - timedelta(days=7)
     recent = set(db.scalars(select(CookingHistory.mealie_slug).where(CookingHistory.cooked_at >= recent_cutoff, *((CookingHistory.owner == owner,) if owner else ()))).all())
     results: list[dict[str, Any]] = []
@@ -212,12 +342,25 @@ async def build_recommendations(db: Session, *, limit: int, max_missing: int, ma
     rng.shuffle(random_results)
     if randomize:
         results = random_results
-    return {"matching_version": 2, "score_weights": SCORE, "recipes_found": len(summaries), "recipes_evaluated": len(results), "recipe_detail_errors": errors, "ready_now": [x for x in results if not x["missing_ingredients"]][:limit], "missing_one_or_two": [x for x in results if 1 <= len(x["missing_ingredients"]) <= 2][:limit], "use_soon": [x for x in results if x["expiring_inventory_matches"]][:limit], "random_pick": random_results[:limit]}
+    scoring_ms = round((time.perf_counter() - scoring_started) * 1000, 1)
+    total_ms = round((time.perf_counter() - total_started) * 1000, 1)
+    cache_size = await recipe_cache_size()
+    diagnostics = {
+        "summary_fetch_ms": summary_fetch_ms,
+        "detail_fetch_ms": detail_fetch_ms,
+        "scoring_ms": scoring_ms,
+        "total_ms": total_ms,
+        "recipe_cache_hits": cache_diagnostics.hits,
+        "recipe_cache_misses": cache_diagnostics.misses,
+        "recipe_cache_errors": cache_diagnostics.errors,
+        "recipe_cache_size": cache_size,
+    }
+    return {"matching_version": 2, "score_weights": SCORE, "recipes_found": len(summaries), "recipes_evaluated": len(results), "recipe_detail_errors": errors, "diagnostics": diagnostics, **diagnostics, "ready_now": [x for x in results if not x["missing_ingredients"]][:limit], "missing_one_or_two": [x for x in results if 1 <= len(x["missing_ingredients"]) <= 2][:limit], "use_soon": [x for x in results if x["expiring_inventory_matches"]][:limit], "random_pick": random_results[:limit]}
 
 
 @router.get("")
-async def recommendations(limit: int = Query(10, ge=1, le=50), max_missing: int = Query(2, ge=0, le=50), max_total_time: int | None = Query(None, ge=1), category: str | None = None, cuisine: str | None = None, owner: str | None = None, use_expiring: bool = True, randomize: bool = False, seed: int | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
-    return await build_recommendations(db, limit=limit, max_missing=max_missing, max_total_time=max_total_time, category=category, cuisine=cuisine, owner=owner, use_expiring=use_expiring, randomize=randomize, seed=seed)
+async def recommendations(limit: int = Query(10, ge=1, le=50), max_missing: int = Query(2, ge=0, le=50), max_total_time: int | None = Query(None, ge=1), category: str | None = None, cuisine: str | None = None, owner: str | None = None, use_expiring: bool = True, randomize: bool = False, seed: int | None = None, refresh_cache: bool = False, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return await build_recommendations(db, limit=limit, max_missing=max_missing, max_total_time=max_total_time, category=category, cuisine=cuisine, owner=owner, use_expiring=use_expiring, randomize=randomize, seed=seed, refresh_cache=refresh_cache)
 
 
 @router.get("/preview", deprecated=True)

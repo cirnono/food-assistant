@@ -15,9 +15,19 @@ from app.ingredient_names import BUILTIN_ALIASES, alias_map
 from app.main import app
 from app.models import CookingHistory, IngredientAlias, PantryItem
 from app.recommendations import build_recommendations
+import app.recommendations as recommendations
 
 
 TOKEN = {"X-Food-Assistant-Token": "example-development-token-00000000"}
+
+
+@pytest.fixture(autouse=True)
+def empty_recipe_cache():
+    recommendations._recipe_cache.clear()
+    recommendations._recipe_inflight.clear()
+    yield
+    recommendations._recipe_cache.clear()
+    recommendations._recipe_inflight.clear()
 
 
 @pytest.fixture()
@@ -101,7 +111,7 @@ def test_pagination_and_concurrency_limit(db, monkeypatch):
         return response({"name": path, "recipeIngredient": []}, f"http://mealie{path}")
 
     monkeypatch.setattr("app.recommendations.PAGE_SIZE", 2)
-    monkeypatch.setattr("app.recommendations.DETAIL_CONCURRENCY", 2)
+    monkeypatch.setenv("MEALIE_RECOMMENDATION_CONCURRENCY", "2")
     monkeypatch.setattr("app.recommendations.mealie_get", fake_get)
     result = asyncio.run(build_recommendations(db, limit=10, max_missing=0, max_total_time=None, category=None, cuisine=None, owner=None, use_expiring=True, randomize=False, seed=None))
     assert result["recipes_found"] == 4
