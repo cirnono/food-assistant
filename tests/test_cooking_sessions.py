@@ -326,5 +326,15 @@ def test_cook_page_uses_shared_token_storage_and_has_confirmations(cooking_clien
     response = client.get("/cook")
     assert response.status_code == 200
     assert "foodAssistantApiToken" in response.text
+    assert 'id="idle"' in response.text
+    assert 'id="active"' in response.text
     assert "确认完成烹饪" in response.text
     assert "确认取消本次烹饪" in response.text
+
+    load_script = response.text.split("async function load()", 1)[1].split(
+        "function renderSession()", 1
+    )[0]
+    assert "    }\n  } catch (error) {" in load_script
+    assert "      document.querySelector('#idle').hidden = false;" in load_script
+    assert response.text.rstrip().endswith("</script></body></html>")
+    assert "setInterval(sync,10000);load();" in response.text
