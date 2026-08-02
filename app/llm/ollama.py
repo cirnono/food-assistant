@@ -1,12 +1,35 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
 
 from app.llm.config import LLMSettings
-from app.llm.errors import LLMProviderError, flatten_error_detail, provider_error
+from app.llm.errors import (
+    LLMProviderError,
+    flatten_error_detail,
+    provider_error,
+    sanitize_error,
+)
 from app.llm.json_utils import extract_json_object
+
+
+logger = logging.getLogger(__name__)
+
+_SCHEMA_GRAMMAR_ERROR_MARKERS = (
+    "json schema",
+    "grammar",
+    "failed to parse schema",
+    "xgrammar",
+)
+
+_NON_SCHEMA_FALLBACK_ERROR_MARKERS = (
+    "model not found",
+    "cuda out of memory",
+    "cudamalloc failed",
+    "unable to allocate cuda",
+)
 
 
 class OllamaProvider:
@@ -20,13 +43,12 @@ class OllamaProvider:
         user_prompt: str,
         response_schema: dict[str, Any],
     ) -> dict[str, Any]:
-        del response_schema  # Ollama's json mode is retained for compatibility.
         payload = {
             "model": self.settings.model,
             "stream": False,
             "think": False,
             "keep_alive": self.settings.keep_alive,
-            "format": "json",
+            "format": response_schema,
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
@@ -37,7 +59,17 @@ class OllamaProvider:
                 "num_predict": self.settings.max_tokens,
             },
         }
-        response = await self._post("/api/chat", payload)
+        try:
+            response = await self._post("/api/chat", payload)
+        except _OllamaHTTPError as exc:
+            if not exc.is_schema_grammar_rejection:
+                raise
+            logger.warning(
+                "Ollama rejected the supplied JSON Schema; "
+                "falling back to JSON mode."
+            )
+            fallback_payload = {**payload, "format": "json"}
+            response = await self._post("/api/chat", fallback_payload)
         message = response.get("message")
         content = message.get("content") if isinstance(message, dict) else None
         if not isinstance(content, str) or not content.strip():
@@ -115,7 +147,11 @@ class OllamaProvider:
             except ValueError:
                 detail = response.text
             message = f"{label} returned HTTP {response.status_code}: {detail[:500]}"
-            error = provider_error(message)
+            error = _OllamaHTTPError(
+                message,
+                status_code=response.status_code,
+                detail=detail,
+            )
             if response.status_code >= 500:
                 error.infrastructure = True
             raise error
@@ -126,3 +162,29 @@ class OllamaProvider:
         if not isinstance(payload, dict):
             raise LLMProviderError(f"Unexpected {label} response")
         return payload
+
+
+class _OllamaHTTPError(LLMProviderError):
+    def __init__(self, message: str, *, status_code: int, detail: object) -> None:
+        super().__init__(
+            message,
+            infrastructure=provider_error(message).infrastructure,
+        )
+        self.status_code = status_code
+        self.detail = sanitize_error(detail).casefold()
+
+    @property
+    def is_schema_grammar_rejection(self) -> bool:
+        if self.status_code != 400:
+            return False
+        if any(
+            marker in self.detail
+            for marker in _NON_SCHEMA_FALLBACK_ERROR_MARKERS
+        ):
+            return False
+        return any(
+            marker in self.detail for marker in _SCHEMA_GRAMMAR_ERROR_MARKERS
+        ) or (
+            "unable to parse" in self.detail
+            and ("schema" in self.detail or "grammar" in self.detail)
+        )

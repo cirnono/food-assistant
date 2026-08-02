@@ -3130,6 +3130,8 @@ REVIEW_HTML = r'''
         "source_updated",
         "processing",
       ].includes(item.status);
+      const canProcess =
+        item.status === "queued";
 
       document.getElementById(
         "content"
@@ -3176,20 +3178,38 @@ REVIEW_HTML = r'''
             class="toolbar"
             style="margin-top:14px"
           >
-            <button
-              id="retryItemButton"
-              type="button"
-              class="primary"
-              onclick="retryCurrentItem()"
-              ${canRetry ? "" : "disabled"}
-            >
-              重试 AI 标准化
-            </button>
+            ${
+              canProcess
+                ? `
+                  <button
+                    id="processItemButton"
+                    type="button"
+                    class="primary"
+                    onclick="processCurrentQueuedItem()"
+                  >
+                    处理此菜谱
+                  </button>
+                `
+                : `
+                  <button
+                    id="retryItemButton"
+                    type="button"
+                    class="primary"
+                    onclick="retryCurrentItem()"
+                    ${canRetry ? "" : "disabled"}
+                  >
+                    重试 AI 标准化
+                  </button>
+                `
+            }
           </div>
 
           <p class="status-line">
-            重试只会把本项目放回 queued；
-            之后仍需点击左侧“处理下一道”才会调用 Ollama。
+            ${
+              canProcess
+                ? "只处理当前选中项目，不会自动导入 Mealie。"
+                : "重试只会把本项目放回 queued；之后可在详情页处理。"
+            }
           </p>
         </div>
       `;
@@ -3272,6 +3292,9 @@ REVIEW_HTML = r'''
       "failed",
     ].includes(status);
 
+    const canRestoreRejected =
+      status === "rejected";
+
     document.getElementById(
       "content"
     ).innerHTML = `
@@ -3341,6 +3364,14 @@ REVIEW_HTML = r'''
               ${canImport ? "" : "disabled"}
             >
               导入 Mealie
+            </button>
+
+            <button
+              type="button"
+              onclick="restoreRejectedItem()"
+              ${canRestoreRejected ? "" : "disabled"}
+            >
+              撤销拒绝并恢复审核
             </button>
           </div>
         </div>
@@ -3812,6 +3843,53 @@ REVIEW_HTML = r'''
         button.textContent =
           "重试 AI 标准化";
       }
+    }
+  }
+
+
+  async function processCurrentQueuedItem() {
+    const item = state.currentItem;
+    if (!item || item.status !== "queued") {
+      return;
+    }
+    if (!confirm(
+      `确认调用 Ollama 处理 Item #${item.id}？`
+    )) {
+      return;
+    }
+    const button = document.getElementById(
+      "processItemButton"
+    );
+    if (button) {
+      button.disabled = true;
+      button.textContent = "正在处理……";
+    }
+    try {
+      const data = await api(
+        `/api/v1/import-jobs/${
+          state.currentJobId
+        }/items/${item.id}/process`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            confirm_item_id: Number(item.id),
+            auto_import: false,
+            unload_model_after: true,
+          }),
+        }
+      );
+      state.jobActionMessage =
+        `Item #${item.id} 处理完成，已进入人工审核。`;
+      state.jobActionIsError = false;
+      await loadJobs();
+      await loadItems(state.currentJobId);
+      await loadItem(Number(item.id));
+      showResult(data);
+    } catch (error) {
+      showResult(error.message, true);
+      await loadJobs();
+      await loadItems(state.currentJobId);
+      await loadItem(Number(item.id));
     }
   }
 
@@ -4608,6 +4686,39 @@ REVIEW_HTML = r'''
         error.message,
         true
       );
+    }
+  }
+
+
+  async function restoreRejectedItem() {
+    const item = state.currentItem;
+    if (!item || item.status !== "rejected") {
+      return;
+    }
+    if (!confirm(
+      `确认撤销 Item #${item.id} 的拒绝状态并恢复到人工审核？`
+    )) {
+      return;
+    }
+    setActionFeedback("正在恢复审核……");
+    try {
+      const data = await api(
+        `/api/v1/import-jobs/${
+          state.currentJobId
+        }/items/${item.id}/restore-rejected`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            confirm_item_id: Number(item.id),
+          }),
+        }
+      );
+      await loadJobs();
+      await loadItems(state.currentJobId);
+      await loadItem(Number(item.id));
+      showResult(data);
+    } catch (error) {
+      showResult(error.message, true);
     }
   }
 

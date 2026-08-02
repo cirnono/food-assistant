@@ -367,6 +367,20 @@ class RecipeImportItem(Base):
         nullable=True,
     )
 
+    duplicate_of_item_id: Mapped[int | None] = mapped_column(
+        nullable=True,
+    )
+
+    duplicate_mealie_slug: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    duplicate_reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
     attempts: Mapped[int] = mapped_column(
         nullable=False,
         default=0,

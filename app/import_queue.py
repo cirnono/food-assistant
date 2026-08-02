@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from datetime import UTC, datetime
 from typing import Literal
 from urllib.parse import quote
 
@@ -195,6 +196,16 @@ class ImportItemRejection(StrictModel):
     )
 
 
+class RestoreRejectedRequest(StrictModel):
+    confirm_item_id: int = Field(ge=1)
+
+
+class ProcessImportItemRequest(StrictModel):
+    confirm_item_id: int = Field(ge=1)
+    auto_import: bool = False
+    unload_model_after: bool = True
+
+
 class MealieImportConfirmation(StrictModel):
     confirm_item_id: int = Field(
         ge=1,
@@ -350,16 +361,27 @@ def update_job_status(
     if job.status == "cancelled":
         return counts
 
+    terminal_statuses = {
+        "imported",
+        "rejected",
+        "skipped",
+        "cancelled",
+    }
+    terminal_count = sum(
+        counts.get(item_status, 0)
+        for item_status in terminal_statuses
+    )
     imported = counts.get("imported", 0)
     rejected = counts.get("rejected", 0)
+    skipped = counts.get("skipped", 0)
+    cancelled = counts.get("cancelled", 0)
     approved = counts.get(
         "approved_for_import",
         0,
     )
 
     if (
-        imported + rejected
-        == job.total_items
+        terminal_count == job.total_items
     ):
         job.status = "completed"
 
@@ -384,7 +406,7 @@ def update_job_status(
         job.status = "review"
 
     elif (
-        approved + imported + rejected
+        approved + imported + rejected + skipped + cancelled
         == job.total_items
         and approved > 0
     ):
@@ -464,6 +486,28 @@ def build_source_url(
         f"{repository_url}/blob/"
         f"{quote(branch, safe='/')}/"
         f"{encoded_path}"
+    )
+
+
+def build_normalization_user_prompt(
+    *,
+    content: str,
+    source_metadata: dict,
+) -> str:
+    return (
+        "请整理以下一道菜谱。菜谱正文完整保留如下：\n\n"
+        "待整理菜谱原文：\n"
+        + content
+        + "\n\n来源信息：\n"
+        + json.dumps(
+            source_metadata,
+            ensure_ascii=False,
+        )
+        + "\n\n输出要求：\n"
+        "- 严格遵循请求携带的 JSON Schema。\n"
+        "- ingredients 和 instructions 均不得为空。\n"
+        "- 不得编造正文中不存在的食材、步骤或数量。\n"
+        "- 重复检测由程序侧负责；不要猜测其他菜谱。"
     )
 
 
@@ -1067,31 +1111,9 @@ async def normalize_source_recipe(
         "source_license": None,
     }
 
-    known_names = existing_normalized_names(
-        db,
-        job.id,
-    )
-
-    user_prompt = (
-        "请整理以下一道菜谱。\n\n"
-        "来源信息：\n"
-        + json.dumps(
-            source_metadata,
-            ensure_ascii=False,
-        )
-        + "\n\n已有菜谱名称，用于重复检测：\n"
-        + json.dumps(
-            known_names,
-            ensure_ascii=False,
-        )
-        + "\n\n必须遵循的输出 JSON Schema：\n"
-        + json.dumps(
-            schema,
-            ensure_ascii=False,
-            separators=(",", ":"),
-        )
-        + "\n\n待整理菜谱原文：\n"
-        + content
+    user_prompt = build_normalization_user_prompt(
+        content=content,
+        source_metadata=source_metadata,
     )
 
     payload = await get_llm_provider().structured_chat(
@@ -1141,12 +1163,7 @@ async def normalize_source_recipe(
                 separators=(",", ":"),
                 default=str,
             )
-            + "\n\n目标 JSON Schema：\n"
-            + json.dumps(
-                schema,
-                ensure_ascii=False,
-                separators=(",", ":"),
-            )
+            + "\n\ningredients 和 instructions 均不得为空。"
             + "\n\n需要修复的 JSON：\n"
             + json.dumps(
                 prepared,
@@ -1683,10 +1700,11 @@ def cancel_import_job(
     }
 
 
-@router.post("/{job_id}/process-next")
-async def process_next_import_item(
+async def _process_import_item(
     job_id: int,
-    db: Session = Depends(get_db),
+    db: Session,
+    *,
+    target_item_id: int | None = None,
 ) -> dict:
     job = get_job_or_404(
         db,
@@ -1707,20 +1725,30 @@ async def process_next_import_item(
 
     ensure_mealie_import_schema(db)
 
+    queued_statement = select(RecipeImportItem).where(
+        RecipeImportItem.job_id == job.id,
+        RecipeImportItem.status == "queued",
+    )
+    if target_item_id is not None:
+        queued_statement = queued_statement.where(
+            RecipeImportItem.id == target_item_id
+        )
     queued_items = list(
         db.scalars(
-            select(RecipeImportItem)
-            .where(
-                RecipeImportItem.job_id
-                == job.id,
-                RecipeImportItem.status
-                == "queued",
-            )
-            .order_by(
-                RecipeImportItem.id.asc()
-            )
+            queued_statement.order_by(RecipeImportItem.id.asc())
         ).all()
     )
+
+    if target_item_id is not None and not queued_items:
+        target = get_item_or_404(db, job.id, target_item_id)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Only queued items can be processed",
+                "item_id": target.id,
+                "current_status": target.status,
+            },
+        )
 
     item: RecipeImportItem | None = None
     skipped_duplicates: list[dict] = []
@@ -1969,12 +1997,28 @@ async def process_next_import_item(
             },
         )
 
-    item.status = "processing"
-    item.attempts += 1
-    item.error = None
+    claim = db.execute(
+        update(RecipeImportItem)
+        .where(
+            RecipeImportItem.id == item.id,
+            RecipeImportItem.status == "queued",
+        )
+        .values(
+            status="processing",
+            attempts=RecipeImportItem.attempts + 1,
+            error=None,
+        )
+    )
+    if claim.rowcount != 1:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="This item is already being processed",
+        )
     job.status = "processing"
 
     db.commit()
+    db.refresh(item)
 
     try:
         normalized = await normalize_source_recipe(
@@ -2023,6 +2067,13 @@ async def process_next_import_item(
                 "item_id": item.id,
                 "recipe": recipe.title,
                 "error": item.error,
+                "duplicate_of_item_id": (
+                    item.duplicate_of_item_id
+                ),
+                "duplicate_mealie_slug": (
+                    item.duplicate_mealie_slug
+                ),
+                "duplicate_reason": item.duplicate_reason,
             },
         ) from exc
 
@@ -2102,6 +2153,55 @@ async def process_next_import_item(
             "Nothing was written to Mealie."
         ),
     }
+
+
+@router.post("/{job_id}/process-next")
+async def process_next_import_item(
+    job_id: int,
+    db: Session = Depends(get_db),
+) -> dict:
+    return await _process_import_item(job_id, db)
+
+
+@router.post("/{job_id}/items/{item_id}/process")
+async def process_specific_import_item(
+    job_id: int,
+    item_id: int,
+    request: ProcessImportItemRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    if request.confirm_item_id != item_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Item confirmation does not match",
+        )
+    if request.auto_import:
+        raise HTTPException(
+            status_code=422,
+            detail="Targeted processing cannot auto-import",
+        )
+    try:
+        return await _process_import_item(
+            job_id,
+            db,
+            target_item_id=item_id,
+        )
+    except HTTPException as exc:
+        if is_ollama_infrastructure_error(exc):
+            item = get_item_or_404(db, job_id, item_id)
+            if item.status == "failed":
+                item.status = "queued"
+                item.error = None
+                job = get_job_or_404(db, job_id)
+                update_job_status(db, job)
+                db.commit()
+        raise
+    finally:
+        if request.unload_model_after:
+            try:
+                await unload_ollama_model()
+            except Exception:
+                pass
 
 
 @router.post("/{job_id}/process-batch")
@@ -2741,6 +2841,74 @@ def reject_review_item(
     }
 
 
+@router.post(
+    "/{job_id}/items/{item_id}/restore-rejected"
+)
+def restore_rejected_item(
+    job_id: int,
+    item_id: int,
+    request: RestoreRejectedRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    job = get_job_or_404(db, job_id)
+    item = get_item_or_404(db, job_id, item_id)
+    if request.confirm_item_id != item_id:
+        raise HTTPException(
+            status_code=409,
+            detail="Item confirmation does not match",
+        )
+    if item.status != "rejected":
+        raise HTTPException(
+            status_code=409,
+            detail="Only rejected items can be restored",
+        )
+    if not item.normalized_json:
+        raise HTTPException(
+            status_code=409,
+            detail="This item has no normalized result",
+        )
+    try:
+        normalized = NormalizedRecipe.model_validate_json(
+            item.normalized_json
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="Stored normalized result is invalid",
+        ) from exc
+
+    audit_prefix = "[系统审计] Restored from rejected at "
+    if not any(
+        str(warning).startswith(audit_prefix)
+        for warning in normalized.warnings
+    ):
+        previous_reason = (item.error or "Not recorded").strip()
+        normalized.warnings.append(
+            audit_prefix
+            + datetime.now(UTC).isoformat()
+            + ". Previous rejection reason: "
+            + previous_reason
+        )
+
+    item.normalized_json = json.dumps(
+        normalized.model_dump(mode="json"),
+        ensure_ascii=False,
+    )
+    item.status = "review"
+    item.error = None
+    db.flush()
+    counts = update_job_status(db, job)
+    db.commit()
+    return {
+        "job_id": job.id,
+        "job_status": job.status,
+        "item_id": item.id,
+        "item_status": item.status,
+        "normalized": normalized.model_dump(mode="json"),
+        "status_counts": counts,
+    }
+
+
 def build_pinned_source_url(
     source: RecipeSource,
     recipe: SourceRecipe,
@@ -3295,6 +3463,10 @@ async def import_item_to_mealie(
             verify_native_structure(
                 normalized,
                 verified_recipe,
+                resolved_categories=(
+                    resolution["categories"]
+                ),
+                resolved_tags=resolution["tags"],
             )
         )
 
@@ -4810,6 +4982,10 @@ async def upgrade_mealie_structure(
             verify_native_structure(
                 normalized,
                 verified_recipe,
+                resolved_categories=(
+                    resolution["categories"]
+                ),
+                resolved_tags=resolution["tags"],
             )
         )
 
@@ -5265,6 +5441,9 @@ def read_import_job_item(
             "status": item.status,
             "attempts": item.attempts,
             "error": item.error,
+            "duplicate_of_item_id": item.duplicate_of_item_id,
+            "duplicate_mealie_slug": item.duplicate_mealie_slug,
+            "duplicate_reason": item.duplicate_reason,
             "normalized": load_normalized_json(
                 item.normalized_json
             ),

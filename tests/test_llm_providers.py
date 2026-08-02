@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import json
 from dataclasses import replace
 
 import httpx
 import pytest
 
+from app.ai_recipes import NormalizedRecipe
 from app.llm.config import LLMSettings
 from app.llm.errors import LLMProviderError, is_infrastructure_error
 from app.llm.ollama import OllamaProvider
@@ -41,18 +43,276 @@ def mock_client(monkeypatch: pytest.MonkeyPatch, handler) -> None:
 
 @pytest.mark.asyncio
 async def test_ollama_structured_response(monkeypatch: pytest.MonkeyPatch) -> None:
+    schema = NormalizedRecipe.model_json_schema()
+
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/api/chat"
-        assert b'"num_ctx":6144' in request.content
+        payload = __import__("json").loads(request.content)
+        assert payload["format"] == schema
+        assert payload["format"] != "json"
+        assert payload["format"]["properties"]["ingredients"]["minItems"] == 1
+        assert payload["format"]["properties"]["instructions"]["minItems"] == 1
+        assert payload["stream"] is False
+        assert payload["think"] is False
+        assert payload["options"] == {
+            "temperature": 0,
+            "num_ctx": 6144,
+            "num_predict": 256,
+        }
         return httpx.Response(
-            200, json={"message": {"content": '{"name":"ok"}'}}
+            200,
+            json={
+                "message": {
+                    "content": "result: " + __import__("json").dumps(
+                        valid_recipe_payload()
+                    )
+                }
+            },
         )
 
     mock_client(monkeypatch, handler)
     result = await OllamaProvider(settings()).structured_chat(
-        system_prompt="system", user_prompt="user", response_schema={}
+        system_prompt="system", user_prompt="user", response_schema=schema
     )
-    assert result == {"name": "ok"}
+    assert NormalizedRecipe.model_validate(result).name == "ok"
+
+
+@pytest.mark.asyncio
+async def test_ollama_falls_back_once_for_grammar_http_400(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    requests: list[dict] = []
+    schema = NormalizedRecipe.model_json_schema()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(json.loads(request.content))
+        if len(requests) == 1:
+            return httpx.Response(
+                400,
+                json={"error": "xgrammar: failed to parse JSON Schema grammar"},
+            )
+        return httpx.Response(
+            200,
+            json={
+                "message": {
+                    "content": f"result: {json.dumps(valid_recipe_payload())}"
+                }
+            },
+        )
+
+    mock_client(monkeypatch, handler)
+    result = await OllamaProvider(settings()).structured_chat(
+        system_prompt="system", user_prompt="user", response_schema=schema
+    )
+
+    assert NormalizedRecipe.model_validate(result).name == "ok"
+    assert len(requests) == 2
+    assert requests[0]["format"] == schema
+    assert requests[1]["format"] == "json"
+    for key in ("model", "messages", "options", "think", "keep_alive", "stream"):
+        assert requests[1][key] == requests[0][key]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("status_code", "detail"),
+    [
+        (400, "invalid value for num_ctx"),
+        (400, "model not found while initializing grammar"),
+        (400, "CUDA out of memory during grammar initialization"),
+        (401, "failed to parse JSON schema grammar"),
+        (403, "failed to parse JSON schema grammar"),
+        (404, "model not found: failed to initialize grammar"),
+        (500, "grammar initialization failed"),
+    ],
+)
+async def test_ollama_does_not_fallback_for_other_http_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    status_code: int,
+    detail: str,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(status_code, json={"error": detail})
+
+    mock_client(monkeypatch, handler)
+    with pytest.raises(LLMProviderError):
+        await OllamaProvider(settings()).structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_ollama_does_not_fallback_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        raise httpx.ReadTimeout("grammar initialization timed out", request=request)
+
+    mock_client(monkeypatch, handler)
+    with pytest.raises(LLMProviderError) as captured:
+        await OllamaProvider(settings()).structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert captured.value.infrastructure is True
+    assert attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_ollama_fallback_failure_is_not_retried(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        return httpx.Response(
+            400,
+            json={"error": "grammar initialization failed"},
+        )
+
+    mock_client(monkeypatch, handler)
+    with pytest.raises(LLMProviderError):
+        await OllamaProvider(settings()).structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert attempts == 2
+
+
+@pytest.mark.asyncio
+async def test_ollama_fallback_warning_does_not_log_sensitive_input(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    prompt_secret = "sensitive-prompt-value"
+    schema_secret = "sensitive-schema-value"
+    token_secret = "sensitive-token-value"
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(400, json={"error": "unable to parse schema grammar"})
+        return httpx.Response(200, json={"message": {"content": '{"ok": true}'}})
+
+    mock_client(monkeypatch, handler)
+    result = await OllamaProvider(settings(api_key=token_secret)).structured_chat(
+        system_prompt=prompt_secret,
+        user_prompt=prompt_secret,
+        response_schema={"description": schema_secret},
+    )
+    assert result == {"ok": True}
+    assert (
+        "Ollama rejected the supplied JSON Schema; falling back to JSON mode."
+        in caplog.text
+    )
+    for secret in (prompt_secret, schema_secret, token_secret):
+        assert secret not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_ollama_json_mode_result_still_requires_caller_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    invalid = valid_recipe_payload()
+    invalid["ingredients"] = []
+    invalid["instructions"] = []
+    attempts = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return httpx.Response(400, json={"error": "failed to parse schema grammar"})
+        return httpx.Response(
+            200,
+            json={"message": {"content": f"prefix {json.dumps(invalid)} suffix"}},
+        )
+
+    mock_client(monkeypatch, handler)
+    result = await OllamaProvider(settings()).structured_chat(
+        system_prompt="system",
+        user_prompt="user",
+        response_schema=NormalizedRecipe.model_json_schema(),
+    )
+    assert result["ingredients"] == []
+    with pytest.raises(ValueError):
+        NormalizedRecipe.model_validate(result)
+
+
+def valid_recipe_payload() -> dict:
+    return {
+        "name": "ok",
+        "original_name": "ok",
+        "description": None,
+        "cuisine": "中餐",
+        "categories": ["晚餐"],
+        "tags": [],
+        "servings": None,
+        "prep_time_minutes": None,
+        "cook_time_minutes": None,
+        "total_time_minutes": None,
+        "ingredients": [
+            {
+                "food_name": "水",
+                "quantity": None,
+                "unit": None,
+                "note": None,
+                "original_text": "水",
+            }
+        ],
+        "instructions": [{"step_number": 1, "text": "加水", "timers": []}],
+        "source": {
+            "source_name": None,
+            "source_url": None,
+            "source_path": None,
+            "source_license": None,
+        },
+        "import_score": 80,
+        "recommendation": "review",
+        "possible_duplicate": False,
+        "duplicate_candidates": [],
+        "warnings": [],
+        "review_required": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_ollama_does_not_send_or_log_api_key(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    secret = "do-not-log-this-api-key"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "authorization" not in request.headers
+        return httpx.Response(500, json={"error": "upstream failed"})
+
+    mock_client(monkeypatch, handler)
+    provider = OllamaProvider(settings(api_key=secret))
+    with pytest.raises(LLMProviderError):
+        await provider.structured_chat(
+            system_prompt="system",
+            user_prompt="user",
+            response_schema={"type": "object"},
+        )
+    assert secret not in caplog.text
 
 
 @pytest.mark.asyncio

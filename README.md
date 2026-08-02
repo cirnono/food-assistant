@@ -47,6 +47,12 @@ Docker Secrets deployment, write one secret per file under `secrets/`, then run:
 docker compose -f compose.yaml -f compose.auth.yaml up -d --build
 ```
 
+Alternatively, keep secret files outside the repository and set
+`FOOD_ASSISTANT_API_TOKEN_HOST_FILE` and `MEALIE_TOKEN_HOST_FILE` in `.env` to
+their absolute host paths. The files are still mounted at `/run/secrets/...`
+inside the container. Do not set `COMPOSE_FILE`; use the explicit `-f` commands
+shown here so the active overlays are unambiguous.
+
 For server-side environment variables instead, set the token variables in
 `.env` and run:
 
@@ -78,7 +84,14 @@ LLM_MODEL=example-model
 ```
 
 To mount the LLM key as a Docker Secret, add
-`-f compose.llm-secret.yaml` to the Compose command.
+`-f compose.llm-secret.yaml` to the Compose command. The host file defaults to
+the ignored `secrets/llm_api_key`; set `LLM_API_KEY_HOST_FILE` to use an
+absolute host path instead:
+
+```bash
+docker compose -f compose.yaml -f compose.auth.yaml \
+  -f compose.llm-secret.yaml up -d --build
+```
 
 OpenAI-compatible mode is designed for services such as DeepSeek, OpenRouter,
 LM Studio, vLLM, and LiteLLM. Compatibility depends on the service and model.

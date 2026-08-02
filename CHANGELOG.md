@@ -6,6 +6,30 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Targeted queued-item processing and rejected-item restoration to the review
+  API and UI.
+- Dry-run-first duplicate import resolution with structured audit fields.
+
+### Fixed
+
+- Treat skipped duplicate items as terminal when calculating job completion.
+
+## [0.21.1] - 2026-08-01
+
+### Added
+
+- Safe reconciliation CLI for verified, already-existing managed Mealie recipes.
+- Regression coverage for paginated entity lookup and unique-conflict recovery.
+
+### Fixed
+
+- Docker Secret host files can be configured outside the repository with
+  `*_HOST_FILE` variables.
+- Mealie category, tag, food, and unit conflicts recover through cached,
+  paginated entity collections without duplicate creation.
+
 ## [0.21.0] - 2026-07-31
 
 ### Added
@@ -29,5 +53,6 @@ All notable changes to this project are documented here. The format follows
 - Excluded local secrets, databases, runtime data, source clones, logs, and
   backups from the public repository.
 
-[Unreleased]: https://github.com/OWNER/food-assistant/compare/v0.21.0...HEAD
-[0.21.0]: https://github.com/OWNER/food-assistant/releases/tag/v0.21.0
+[Unreleased]: https://github.com/cirnono/food-assistant/compare/v0.21.1...HEAD
+[0.21.1]: https://github.com/cirnono/food-assistant/compare/v0.21.0...v0.21.1
+[0.21.0]: https://github.com/cirnono/food-assistant/releases/tag/v0.21.0

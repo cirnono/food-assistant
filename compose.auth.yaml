@@ -13,6 +13,6 @@ services:
 
 secrets:
   food_assistant_api_token:
-    file: ./secrets/food_assistant_api_token
+    file: ${FOOD_ASSISTANT_API_TOKEN_HOST_FILE:-./secrets/food_assistant_api_token}
   mealie_token:
-    file: ./secrets/mealie_token
+    file: ${MEALIE_TOKEN_HOST_FILE:-./secrets/mealie_token}
