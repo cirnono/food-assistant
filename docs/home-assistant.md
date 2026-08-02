@@ -1,6 +1,6 @@
 # Home Assistant bridge
 
-Food Assistant 0.23 provides an authenticated aggregate API and native Home
+Food Assistant 0.24 provides authenticated aggregate and active-cooking APIs and native Home
 Assistant examples. It requires neither HACS nor MQTT Discovery. Food Assistant
 and Home Assistant must be able to reach one another over the network.
 
@@ -14,6 +14,7 @@ food_assistant_state_url: http://food-assistant.example:8787/api/v1/home-assista
 food_assistant_next_url: http://food-assistant.example:8787/api/v1/home-assistant/selection/next
 food_assistant_mark_cooked_url: http://food-assistant.example:8787/api/v1/home-assistant/selection/mark-cooked
 food_assistant_refresh_url: http://food-assistant.example:8787/api/v1/home-assistant/refresh
+food_assistant_cooking_state_url: http://food-assistant.example:8787/api/v1/cooking-sessions/active-state?owner=household
 food_assistant_authorization: Bearer <FOOD_ASSISTANT_API_TOKEN>
 ```
 
@@ -34,7 +35,9 @@ Copy `integrations/home-assistant/food_assistant_package.yaml.example` to HA as
 `packages/food_assistant.yaml`. Run **Developer Tools → YAML → Check
 configuration**, restart HA, and confirm `sensor.food_assistant` becomes `ok`.
 Its attributes contain inventory, recommendation counts, the stable selected
-recipe, links, and generation time.
+recipe, active-cooking summary, links, and generation time. The additional
+`sensor.food_assistant_cooking` polls only local SQLite state every ten seconds;
+it does not contact Mealie or run the recommendation engine.
 
 ## Add the kitchen view
 
@@ -43,9 +46,15 @@ dashboard view, or reproduce its native Markdown, Grid, Button, Glance, and
 Conditional cards in the visual editor. It works on a Surface in landscape and
 on a phone in portrait. No frontend card receives the API credential.
 
-The view can choose another recipe, mark it cooked with confirmation, refresh,
-open Mealie, manage pantry inventory, and show all recommendations. It has
-friendly empty and unavailable states.
+The view can choose another recipe, start or continue a cooking session, move
+between steps, finish or cancel with confirmation, refresh, open Mealie, manage
+pantry inventory, and show all recommendations. Idle and active layouts switch
+automatically and have friendly empty and unavailable states. `/cook` is the
+full touch-first Surface/mobile interface for ingredient check-off and timers.
+
+Set `HOME_ASSISTANT_KITCHEN_URL` only on the Food Assistant host when `/cook`
+should show a return link to a kitchen dashboard. Keep the public example empty;
+the URL is optional and contains no credential.
 
 ## Troubleshooting
 

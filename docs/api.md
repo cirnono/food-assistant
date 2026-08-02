@@ -1,5 +1,19 @@
 # API
 
+## Cooking sessions
+
+All `/api/v1/cooking-sessions/*` endpoints use the existing Food Assistant API
+token. Start with `POST /api/v1/cooking-sessions/start`, read the owner session
+with `GET /active`, and use the confirmed step, ingredient, finish, and cancel
+actions under `/{session_id}`. A recipe snapshot is fixed for the life of the
+session. Finishing writes cooking history and returns a read-only inventory
+consumption preview; it never decrements inventory.
+
+Timer endpoints live under `/{session_id}/timers`. Running timers persist one
+UTC deadline rather than writing every second. Paused timers persist remaining
+seconds. `GET /api/v1/cooking-sessions/active-state` is a lightweight local-only
+polling endpoint suitable for Home Assistant.
+
 Interactive OpenAPI documentation is served at `/docs`. Every `/api/v1/*`
 endpoint requires one of:
 
@@ -18,6 +32,8 @@ page. Major protected groups are:
 
 - `/api/v1/inventory`
 - `/api/v1/recommendations`
+- `/api/v1/cooking-sessions`
+- `/api/v1/home-assistant`
 - `/api/v1/sources`
 - `/api/v1/ai/recipe/normalize`
 - `/api/v1/import-jobs`
