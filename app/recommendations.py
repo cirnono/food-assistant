@@ -250,6 +250,15 @@ async def _fetch_cached_detail(slug: str, semaphore: asyncio.Semaphore, diagnost
     return detail, error
 
 
+async def get_recipe_detail_cached(slug: str) -> tuple[dict[str, Any] | None, str | None]:
+    """Shared cached detail lookup for recommendation and cooking workflows."""
+    return await _fetch_cached_detail(
+        slug,
+        asyncio.Semaphore(_recommendation_concurrency()),
+        CacheDiagnostics(),
+    )
+
+
 async def fetch_all_summaries() -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     seen_slugs: set[str] = set()

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, CheckConstraint, Date, DateTime, Float, ForeignKey, Index, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -157,6 +157,57 @@ class HomeAssistantSelectionHistory(Base):
     owner: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
     mealie_slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     selected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, index=True)
+
+
+class CookingSession(Base):
+    __tablename__ = "cooking_sessions"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'completed', 'cancelled')", name="ck_cooking_session_status"),
+        Index(
+            "uq_cooking_session_active_owner",
+            "owner",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    owner: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    mealie_slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    recipe_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    recipe_snapshot_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
+    current_step_index: Mapped[int] = mapped_column(nullable=False, default=0)
+    checked_ingredients_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    servings: Mapped[float | None] = mapped_column(Float, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class CookingTimer(Base):
+    __tablename__ = "cooking_timers"
+    __table_args__ = (
+        CheckConstraint("state IN ('running', 'paused', 'finished', 'cancelled')", name="ck_cooking_timer_state"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    cooking_session_id: Mapped[int] = mapped_column(
+        ForeignKey("cooking_sessions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    label: Mapped[str] = mapped_column(String(80), nullable=False)
+    state: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    duration_seconds: Mapped[int] = mapped_column(nullable=False)
+    deadline_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    remaining_seconds: Mapped[int | None] = mapped_column(nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    paused_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 
 
 class RecipeSource(Base):

@@ -183,3 +183,35 @@ class HomeAssistantRefreshRequest(BaseModel):
 
     owner: str = Field(default="household", min_length=1, max_length=40)
     refresh_recipe_cache: bool = False
+
+
+class CookingSessionStartRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    owner: str = Field(default="household", min_length=1, max_length=40)
+    mealie_slug: str | None = Field(default=None, min_length=1, max_length=255)
+    confirm_slug: str | None = Field(default=None, min_length=1, max_length=255)
+    servings: float | None = Field(default=None, gt=0)
+
+
+class CookingSessionActionRequest(BaseModel):
+    owner: str = Field(default="household", min_length=1, max_length=40)
+    confirm_session_id: int = Field(gt=0)
+
+
+class CookingSessionSetStepRequest(CookingSessionActionRequest):
+    step_index: int = Field(ge=0)
+
+
+class CookingSessionToggleIngredientRequest(CookingSessionActionRequest):
+    ingredient_index: int = Field(ge=0)
+
+
+class CookingSessionFinishRequest(CookingSessionActionRequest):
+    select_next: bool = True
+
+
+class CookingTimerCreateRequest(CookingSessionActionRequest):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    label: str = Field(min_length=1, max_length=80)
+    duration_seconds: int = Field(ge=1, le=86_400)
+    start_immediately: bool = True
