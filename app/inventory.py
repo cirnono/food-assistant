@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models import PantryItem
+from app.ingredient_names import normalize_name
 from app.schemas import (
     InventorySummary,
     PantryItemCreate,
@@ -80,10 +81,18 @@ def inventory_summary(
         .where(PantryItem.is_staple.is_(True))
     ) or 0
 
+    available_filter = or_(PantryItem.quantity.is_(None), PantryItem.quantity > 0)
+    available_items = db.scalar(select(func.count()).select_from(PantryItem).where(available_filter, or_(PantryItem.expires_at.is_(None), PantryItem.expires_at >= today))) or 0
+    out_of_stock_items = db.scalar(select(func.count()).select_from(PantryItem).where(PantryItem.quantity == 0)) or 0
+    low_stock_items = db.scalar(select(func.count()).select_from(PantryItem).where(PantryItem.quantity.is_not(None), PantryItem.quantity > 0, PantryItem.low_stock_threshold.is_not(None), PantryItem.quantity <= PantryItem.low_stock_threshold)) or 0
+
     return InventorySummary(
         total_items=total_items,
+        available_items=available_items,
+        out_of_stock_items=out_of_stock_items,
         expired_items=expired_items,
         expiring_within_3_days=expiring_items,
+        low_stock_items=low_stock_items,
         staple_items=staple_items,
     )
 
@@ -105,6 +114,8 @@ def list_inventory(
         ge=0,
         le=3650,
     ),
+    low_stock: bool | None = None,
+    staple: bool | None = None,
     limit: int = Query(
         default=100,
         ge=1,
@@ -134,6 +145,16 @@ def list_inventory(
         statement = statement.where(
             PantryItem.owner == owner
         )
+
+    if low_stock is not None:
+        condition = (
+            PantryItem.quantity.is_not(None), PantryItem.quantity > 0,
+            PantryItem.low_stock_threshold.is_not(None),
+            PantryItem.quantity <= PantryItem.low_stock_threshold,
+        )
+        statement = statement.where(*condition) if low_stock else statement.where(or_(PantryItem.low_stock_threshold.is_(None), PantryItem.quantity.is_(None), PantryItem.quantity == 0, PantryItem.quantity > PantryItem.low_stock_threshold))
+    if staple is not None:
+        statement = statement.where(PantryItem.is_staple.is_(staple))
 
     if expiring_within_days is not None:
         cutoff = today + timedelta(days=expiring_within_days)
@@ -182,7 +203,10 @@ def create_inventory_item(
     payload: PantryItemCreate,
     db: Session = Depends(get_db),
 ) -> PantryItem:
-    item = PantryItem(**payload.model_dump())
+    values = payload.model_dump()
+    if not values.get("normalized_name"):
+        values["normalized_name"] = normalize_name(values["name"])
+    item = PantryItem(**values)
 
     db.add(item)
     db.commit()
@@ -238,9 +262,48 @@ def update_inventory_item(
 
         setattr(item, field_name, value)
 
+    if "name" in updates and "normalized_name" not in updates:
+        item.normalized_name = normalize_name(item.name)
+
     db.commit()
     db.refresh(item)
 
+    return item
+
+
+@router.post("/{item_id}/consume", response_model=PantryItemRead)
+def consume_inventory_item(item_id: int, db: Session = Depends(get_db)) -> PantryItem:
+    item = get_item_or_404(db, item_id)
+    item.quantity = 0
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.post("/{item_id}/restock", response_model=PantryItemRead)
+def restock_inventory_item(item_id: int, payload: PantryItemUpdate, db: Session = Depends(get_db)) -> PantryItem:
+    item = get_item_or_404(db, item_id)
+    allowed = {"quantity", "unit", "purchased_at", "expires_at"}
+    updates = payload.model_dump(exclude_unset=True)
+    invalid = set(updates) - allowed
+    if invalid:
+        raise HTTPException(status_code=422, detail=f"Unsupported restock fields: {', '.join(sorted(invalid))}")
+    for key, value in updates.items():
+        setattr(item, key, value)
+    item.opened = False
+    item.opened_at = None
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.post("/{item_id}/open", response_model=PantryItemRead)
+def open_inventory_item(item_id: int, db: Session = Depends(get_db)) -> PantryItem:
+    item = get_item_or_404(db, item_id)
+    item.opened = True
+    item.opened_at = date.today()
+    db.commit()
+    db.refresh(item)
     return item
 
 

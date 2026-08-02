@@ -17,6 +17,11 @@ class PantryItemCreate(BaseModel):
         default=None,
         ge=0,
     )
+    normalized_name: str | None = Field(default=None, max_length=160)
+    low_stock_threshold: float | None = Field(default=None, ge=0)
+    purchased_at: date | None = None
+    opened_at: date | None = None
+    mealie_food_id: str | None = Field(default=None, max_length=255)
 
     unit: str | None = Field(
         default=None,
@@ -58,6 +63,11 @@ class PantryItemUpdate(BaseModel):
         default=None,
         ge=0,
     )
+    normalized_name: str | None = Field(default=None, max_length=160)
+    low_stock_threshold: float | None = Field(default=None, ge=0)
+    purchased_at: date | None = None
+    opened_at: date | None = None
+    mealie_food_id: str | None = Field(default=None, max_length=255)
 
     unit: str | None = Field(
         default=None,
@@ -98,6 +108,45 @@ class PantryItemRead(PantryItemCreate):
 
 class InventorySummary(BaseModel):
     total_items: int
+    available_items: int
+    out_of_stock_items: int
     expired_items: int
     expiring_within_3_days: int
+    low_stock_items: int
     staple_items: int
+
+
+class IngredientAliasCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    canonical_name: str = Field(min_length=1, max_length=160)
+    alias: str = Field(min_length=1, max_length=160)
+
+
+class IngredientAliasUpdate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    canonical_name: str | None = Field(default=None, min_length=1, max_length=160)
+    alias: str | None = Field(default=None, min_length=1, max_length=160)
+
+
+class IngredientAliasRead(IngredientAliasCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class CookingHistoryCreate(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+    mealie_slug: str = Field(min_length=1, max_length=255)
+    recipe_name: str = Field(min_length=1, max_length=300)
+    cooked_at: date = Field(default_factory=date.today)
+    owner: str = Field(default="household", min_length=1, max_length=40)
+    servings: float | None = Field(default=None, gt=0)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    notes: str | None = Field(default=None, max_length=2000)
+
+
+class CookingHistoryRead(CookingHistoryCreate):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    created_at: datetime

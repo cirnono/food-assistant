@@ -31,6 +31,12 @@ class PantryItem(Base):
         nullable=True,
     )
 
+    normalized_name: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+    low_stock_threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+    purchased_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    opened_at: Mapped[date | None] = mapped_column(Date, nullable=True)
+    mealie_food_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
     unit: Mapped[str | None] = mapped_column(
         String(40),
         nullable=True,
@@ -100,6 +106,32 @@ class PantryItem(Base):
             return None
 
         return (self.expires_at - date.today()).days
+
+
+class IngredientAlias(Base):
+    __tablename__ = "ingredient_aliases"
+    __table_args__ = (UniqueConstraint("normalized_alias", name="uq_ingredient_alias_normalized"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    canonical_name: Mapped[str] = mapped_column(String(160), nullable=False)
+    alias: Mapped[str] = mapped_column(String(160), nullable=False)
+    normalized_alias: Mapped[str] = mapped_column(String(160), nullable=False, unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class CookingHistory(Base):
+    __tablename__ = "cooking_history"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    mealie_slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    recipe_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    cooked_at: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    owner: Mapped[str] = mapped_column(String(40), nullable=False, default="household", index=True)
+    servings: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
 
 class RecipeSource(Base):
