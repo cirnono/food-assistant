@@ -1,0 +1,85 @@
+title: 厨房
+path: kitchen
+icon: mdi:chef-hat
+cards:
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: sensor.food_assistant
+        state_not: unavailable
+      - condition: state
+        entity: sensor.food_assistant_recipe
+        state_not: 暂无推荐
+    card:
+      type: vertical-stack
+      cards:
+        - type: markdown
+          title: 今日推荐
+          content: >-
+            ## {{ states('sensor.food_assistant_recipe') }}
+
+            覆盖率：{{ states('sensor.food_assistant_recipe_coverage') }}%
+
+            缺少：{{ states('sensor.food_assistant_recipe_missing') or '无' }}
+
+            临期：{{ state_attr('sensor.food_assistant_recipe', 'expiring') | default([]) | join('、') or '无' }}
+
+            预计时间：{{ state_attr('sensor.food_assistant_recipe', 'total_time') | default('未知') }} 分钟
+
+            [打开 Mealie]({{ states('sensor.food_assistant_recipe_url') }}) ·
+            [管理库存]({{ state_attr('sensor.food_assistant', 'links').pantry }}) ·
+            [查看全部推荐]({{ state_attr('sensor.food_assistant', 'links').recommendations }})
+        - type: grid
+          columns: 3
+          square: false
+          cards:
+            - type: button
+              name: 换一道
+              icon: mdi:shuffle-variant
+              tap_action:
+                action: perform-action
+                perform_action: script.turn_on
+                target:
+                  entity_id: script.food_assistant_next_recipe
+            - type: button
+              name: 标记今天做了
+              icon: mdi:pot-steam
+              tap_action:
+                action: perform-action
+                perform_action: script.turn_on
+                target:
+                  entity_id: script.food_assistant_mark_cooked
+                confirmation:
+                  text: 确认将当前推荐标记为今天做过？
+            - type: button
+              name: 刷新
+              icon: mdi:refresh
+              tap_action:
+                action: perform-action
+                perform_action: script.turn_on
+                target:
+                  entity_id: script.food_assistant_refresh
+        - type: glance
+          title: 库存概览
+          columns: 4
+          entities:
+            - {entity: sensor.food_assistant_inventory_total, name: 总库存}
+            - {entity: sensor.food_assistant_expiring, name: 临期}
+            - {entity: sensor.food_assistant_expired, name: 过期}
+            - {entity: sensor.food_assistant_out_of_stock, name: 缺货}
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: sensor.food_assistant_recipe
+        state: 暂无推荐
+    card:
+      type: markdown
+      content: 暂无符合条件的推荐，请检查库存或放宽筛选条件。
+  - type: conditional
+    conditions:
+      - condition: state
+        entity: sensor.food_assistant
+        state: unavailable
+    card:
+      type: markdown
+      content: Food Assistant 当前不可用，请检查网络、服务状态和 Home Assistant 日志。

@@ -292,3 +292,35 @@ def test_has_next_page_rejects_abnormal_metadata(monkeypatch):
     assert recommendations.has_next_page({"next": False}, 1, 1) is False
     assert recommendations.has_next_page({"next": 1}, 1, 1) is False
     assert recommendations.has_next_page({"totalPages": "many"}, 1, 1) is False
+
+
+def test_recipe_cache_ttl_default(monkeypatch):
+    monkeypatch.delenv("MEALIE_RECIPE_CACHE_TTL_SECONDS", raising=False)
+    assert recommendations.DEFAULT_RECIPE_CACHE_TTL_SECONDS == 21_600
+    assert recommendations._configured_recipe_cache_ttl_seconds() == 21_600
+
+
+def test_recipe_cache_ttl_accepts_valid_custom_value(monkeypatch):
+    monkeypatch.setenv("MEALIE_RECIPE_CACHE_TTL_SECONDS", "43200")
+    assert recommendations._configured_recipe_cache_ttl_seconds() == 43_200
+
+
+@pytest.mark.parametrize("value", ["299", "86401", "not-a-number"])
+def test_recipe_cache_ttl_invalid_values_use_safe_default(monkeypatch, caplog, value):
+    monkeypatch.setenv("MEALIE_RECIPE_CACHE_TTL_SECONDS", value)
+    with caplog.at_level("WARNING"):
+        result = recommendations._configured_recipe_cache_ttl_seconds()
+    assert result == 21_600
+    assert "using safe default 21600" in caplog.text
+    assert value not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_manual_refresh_clears_success_and_failure_cache():
+    recommendations._recipe_cache.update({
+        "success": recommendations.RecipeCacheEntry({"name": "ok"}, None, 999999999),
+        "failure": recommendations.RecipeCacheEntry(None, "safe error", 999999999),
+    })
+    await recommendations.clear_recipe_detail_cache()
+    assert recommendations._recipe_cache == {}
+    assert recommendations._recipe_inflight == {}

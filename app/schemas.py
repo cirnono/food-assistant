@@ -150,3 +150,36 @@ class CookingHistoryRead(CookingHistoryCreate):
     model_config = ConfigDict(from_attributes=True)
     id: int
     created_at: datetime
+
+
+class HomeAssistantFilters(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    owner: str = Field(default="household", min_length=1, max_length=40)
+    mode: str = Field(default="ready_now", pattern="^(ready_now|missing_one_or_two|use_soon|random_pick)$")
+    max_missing: int = Field(default=2, ge=0, le=50)
+    max_total_time: int | None = Field(default=None, ge=1)
+    category: str | None = Field(default=None, max_length=160)
+    cuisine: str | None = Field(default=None, max_length=160)
+
+
+class HomeAssistantNextRequest(HomeAssistantFilters):
+    confirm_owner: str = Field(min_length=1, max_length=40)
+
+
+class HomeAssistantMarkCookedRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    owner: str = Field(default="household", min_length=1, max_length=40)
+    confirm_slug: str = Field(min_length=1, max_length=255)
+    servings: float | None = Field(default=None, gt=0)
+    rating: float | None = Field(default=None, ge=0, le=5)
+    notes: str | None = Field(default=None, max_length=2000)
+    select_next: bool = True
+
+
+class HomeAssistantRefreshRequest(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    owner: str = Field(default="household", min_length=1, max_length=40)
+    refresh_recipe_cache: bool = False
