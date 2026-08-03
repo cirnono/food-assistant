@@ -19,6 +19,10 @@ from app.pantry_ui import router as pantry_ui_router
 from app.home_assistant import router as home_assistant_router
 from app.cooking_sessions import router as cooking_sessions_router
 from app.cooking_ui import router as cooking_ui_router
+from app.consumption import router as consumption_router
+from app.consumption_ui import router as consumption_ui_router
+from app.shopping import router as shopping_router
+from app.shopping_ui import router as shopping_ui_router
 from app.github_sources import router as github_sources_router
 from app.import_queue import router as import_queue_router
 from app.ai_recipes import router as ai_recipes_router
@@ -35,7 +39,7 @@ from app.recommendations import (
 from app.system_api import router as system_router
 
 
-APP_VERSION = "0.24.0"
+APP_VERSION = "0.25.0"
 
 
 @asynccontextmanager
@@ -68,6 +72,10 @@ app.include_router(pantry_ui_router)
 app.include_router(home_assistant_router)
 app.include_router(cooking_sessions_router)
 app.include_router(cooking_ui_router)
+app.include_router(consumption_router)
+app.include_router(consumption_ui_router)
+app.include_router(shopping_router)
+app.include_router(shopping_ui_router)
 app.include_router(ai_recipes_router)
 app.include_router(github_sources_router)
 app.include_router(import_queue_router)
@@ -95,6 +103,8 @@ async def root() -> dict[str, Any]:
             "pantry_ui": "/pantry",
             "recommendations_ui": "/recommendations",
             "cooking_ui": "/cook",
+            "consumption_ui": "/consumption",
+            "shopping_ui": "/shopping",
             "active_cooking": "/api/v1/cooking-sessions/active-state",
             "home_assistant_state": "/api/v1/home-assistant/state",
             "mealie_status": (

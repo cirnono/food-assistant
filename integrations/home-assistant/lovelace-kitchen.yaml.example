@@ -31,7 +31,11 @@ cards:
 
             [打开 Mealie]({{ states('sensor.food_assistant_recipe_url') }}) ·
             [管理库存]({{ state_attr('sensor.food_assistant', 'links').pantry }}) ·
-            [查看全部推荐]({{ state_attr('sensor.food_assistant', 'links').recommendations }})
+            [查看全部推荐]({{ state_attr('sensor.food_assistant', 'links').recommendations }}) ·
+            [打开消耗确认]({{ states('sensor.food_assistant_consumption_url') }}) ·
+            [打开购物清单]({{ states('sensor.food_assistant_shopping_url') }})
+
+            待确认库存消耗：{{ states('sensor.food_assistant_pending_consumption') }}；购物清单：{{ states('sensor.food_assistant_shopping_count') }}
         - type: grid
           columns: 4
           square: false
