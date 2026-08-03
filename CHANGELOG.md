@@ -6,6 +6,26 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-08-02
+
+### Added
+
+- Owner-scoped persistent cooking sessions with stable Mealie recipe snapshots,
+  step navigation, checked ingredients, and cooking-history completion.
+- Durable UTC-deadline cooking timers with pause, resume, recovery, and an
+  eight-timer safety limit without per-second database writes.
+- Responsive `/cook` Surface/mobile interface with local countdowns and
+  explicit completion and cancellation confirmation.
+- Lightweight authenticated active-cooking state and native Home Assistant
+  cooking sensors, actions, scripts, and conditional dashboard examples.
+
+### Changed
+
+- Home Assistant aggregate state now includes a lightweight `active_cooking`
+  summary without invoking another recommendation or Mealie request.
+- Cooking completion returns only a read-only inventory-consumption preview;
+  pantry quantities are never changed automatically.
+
 ## [0.23.0] - 2026-08-02
 
 ### Added
@@ -81,7 +101,8 @@ All notable changes to this project are documented here. The format follows
 - Excluded local secrets, databases, runtime data, source clones, logs, and
   backups from the public repository.
 
-[Unreleased]: https://github.com/cirnono/food-assistant/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/cirnono/food-assistant/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/cirnono/food-assistant/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/cirnono/food-assistant/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/cirnono/food-assistant/compare/v0.21.1...v0.22.0
 [0.21.1]: https://github.com/cirnono/food-assistant/compare/v0.21.0...v0.21.1

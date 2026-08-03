@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+
 from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,6 +29,32 @@ def create_cooking_history_record(
     else:
         db.flush()
     return row
+
+
+def record_cooked_recipe(
+    payload: CookingHistoryCreate,
+    db: Session,
+    *,
+    idempotency_notes: str | None = None,
+    recent_window: timedelta | None = None,
+) -> tuple[CookingHistory, bool]:
+    """Create one history row unless its explicit idempotency rule already matches."""
+    statement = select(CookingHistory).where(
+        CookingHistory.owner == payload.owner,
+        CookingHistory.mealie_slug == payload.mealie_slug,
+    )
+    if idempotency_notes is not None:
+        statement = statement.where(CookingHistory.notes == idempotency_notes)
+    elif recent_window is not None:
+        statement = statement.where(
+            CookingHistory.created_at >= datetime.now(UTC) - recent_window
+        )
+    else:
+        return create_cooking_history_record(payload, db, commit=False), True
+    existing = db.scalar(statement.order_by(CookingHistory.id.desc()).limit(1))
+    if existing is not None:
+        return existing, False
+    return create_cooking_history_record(payload, db, commit=False), True
 
 
 @router.get("", response_model=list[CookingHistoryRead])

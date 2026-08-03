@@ -6,15 +6,15 @@ import random
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.cooking_history import create_cooking_history_record
+from app.cooking_history import record_cooked_recipe
 from app.database import get_db
 from app.inventory import inventory_summary
 from app.models import (
-    CookingHistory,
+    CookingSession,
     HomeAssistantSelection,
     HomeAssistantSelectionHistory,
 )
@@ -35,6 +35,10 @@ _selection_modes = {"ready_now", "missing_one_or_two", "use_soon", "random_pick"
 
 def _owner_lock(owner: str) -> asyncio.Lock:
     return _owner_locks.setdefault(owner, asyncio.Lock())
+
+
+def owner_lock(owner: str) -> asyncio.Lock:
+    return _owner_lock(owner)
 
 
 def _filters_dict(filters: HomeAssistantFilters) -> dict[str, Any]:
@@ -163,6 +167,31 @@ async def _recommendation_result(db: Session, filters: HomeAssistantFilters) -> 
     )
 
 
+async def select_next_for_owner(
+    db: Session,
+    filters: HomeAssistantFilters,
+    *,
+    commit: bool = True,
+) -> HomeAssistantSelection:
+    result = await _recommendation_result(db, filters)
+    candidates = _candidate_group(result, filters.mode)
+    current = _get_selection(db, filters.owner)
+    seed = random.SystemRandom().randint(1, 2_147_483_647)
+    chosen = _choose_next(
+        db,
+        filters.owner,
+        candidates,
+        current.selected_slug if current else None,
+        seed,
+    )
+    if chosen is None:
+        raise HTTPException(status_code=409, detail="No recipe candidates are available for this mode and filters")
+    selection = _save_selection(db, filters, chosen, seed=seed)
+    if commit:
+        db.commit()
+    return selection
+
+
 def _inventory_payload(db: Session) -> dict[str, int]:
     summary = inventory_summary(db)
     return {
@@ -172,6 +201,32 @@ def _inventory_payload(db: Session) -> dict[str, int]:
         "expired": summary.expired_items,
         "out_of_stock": summary.out_of_stock_items,
         "low_stock": summary.low_stock_items,
+    }
+
+
+def _active_cooking_payload(request: Request, db: Session, owner: str) -> dict[str, Any]:
+    row = db.scalar(select(CookingSession).where(
+        CookingSession.owner == owner,
+        CookingSession.status == "active",
+    ))
+    if row is None:
+        return {"status": "idle", "session_id": None, "cooking_url": None}
+    try:
+        snapshot = json.loads(row.recipe_snapshot_json)
+        instructions = snapshot.get("instructions", [])
+    except (TypeError, ValueError):
+        instructions = []
+    count = len(instructions)
+    base_url = str(request.base_url).rstrip("/")
+    return {
+        "status": "active",
+        "session_id": row.id,
+        "recipe_name": row.recipe_name,
+        "mealie_slug": row.mealie_slug,
+        "current_step_index": row.current_step_index,
+        "step_count": count,
+        "progress_percent": round((row.current_step_index + 1) / count * 100, 1) if count else 0,
+        "cooking_url": f"{base_url}/cook",
     }
 
 
@@ -217,6 +272,7 @@ async def _state(
             "use_soon_count": len(result["use_soon"]),
         },
         "selected_recipe": _safe_snapshot(selected) if selected else None,
+        "active_cooking": _active_cooking_payload(request, db, filters.owner),
         "links": {
             "pantry": f"{base_url}/pantry",
             "recommendations": f"{base_url}/recommendations",
@@ -257,21 +313,7 @@ async def next_selection(
         raise HTTPException(status_code=409, detail="confirm_owner must match owner")
     filters = HomeAssistantFilters(**payload.model_dump(exclude={"confirm_owner"}))
     async with _owner_lock(payload.owner):
-        result = await _recommendation_result(db, filters)
-        candidates = _candidate_group(result, filters.mode)
-        current = _get_selection(db, payload.owner)
-        seed = random.SystemRandom().randint(1, 2_147_483_647)
-        chosen = _choose_next(
-            db,
-            payload.owner,
-            candidates,
-            current.selected_slug if current else None,
-            seed,
-        )
-        if chosen is None:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No recipe candidates are available for this mode and filters")
-        _save_selection(db, filters, chosen, seed=seed)
-        db.commit()
+        await select_next_for_owner(db, filters)
         return await _state(request, db, filters)
 
 
@@ -294,29 +336,20 @@ async def mark_selection_cooked(
         if selection is None or selection.selected_slug != payload.confirm_slug:
             raise HTTPException(status_code=409, detail="confirm_slug does not match the current selection")
         filters = _filters_from_selection(selection)
-        now = datetime.now(UTC)
-        recent_duplicate = db.scalar(
-            select(CookingHistory.id).where(
-                CookingHistory.owner == payload.owner,
-                CookingHistory.mealie_slug == payload.confirm_slug,
-                CookingHistory.created_at >= now - timedelta(minutes=5),
-            ).limit(1)
-        )
         try:
-            if recent_duplicate is None:
-                create_cooking_history_record(
-                    CookingHistoryCreate(
-                        mealie_slug=selection.selected_slug,
-                        recipe_name=selection.selected_name or selection.selected_slug,
-                        cooked_at=date.today(),
-                        owner=payload.owner,
-                        servings=payload.servings,
-                        rating=payload.rating,
-                        notes=payload.notes,
-                    ),
-                    db,
-                    commit=False,
-                )
+            record_cooked_recipe(
+                CookingHistoryCreate(
+                    mealie_slug=selection.selected_slug,
+                    recipe_name=selection.selected_name or selection.selected_slug,
+                    cooked_at=date.today(),
+                    owner=payload.owner,
+                    servings=payload.servings,
+                    rating=payload.rating,
+                    notes=payload.notes,
+                ),
+                db,
+                recent_window=timedelta(minutes=5),
+            )
             if payload.select_next:
                 result = await _recommendation_result(db, filters)
                 candidates = _candidate_group(result, filters.mode)
