@@ -96,6 +96,14 @@ def test_state_includes_lightweight_active_cooking(bridge_client):
     assert response.status_code == 200
     assert response.json()["active_cooking"]["status"] == "active"
     assert response.json()["active_cooking"]["session_id"] is not None
+    assert response.json()["shopping"] == {
+        "active_count": 0,
+        "high_priority_count": 0,
+        "pending_consumption_reviews": 0,
+        "next_items": [],
+    }
+    assert response.json()["links"]["consumption"].endswith("/consumption")
+    assert response.json()["links"]["shopping"].endswith("/shopping")
 
 
 def test_next_avoids_repeat_and_owners_are_independent(bridge_client):

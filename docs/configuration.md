@@ -4,7 +4,7 @@ Copy `.env.example` to `.env`. Never commit `.env` or secret files.
 
 | Variable | Purpose | Default |
 |---|---|---|
-| `APP_VERSION` | Reported application version | `0.24.0` |
+| `APP_VERSION` | Reported application version | `0.25.0` |
 | `FOOD_ASSISTANT_DATA_DIR` | Host persistence directory for Compose | `./data` |
 | `DATABASE_URL` | SQLAlchemy database URL | SQLite under `/data` |
 | `FOOD_ASSISTANT_API_TOKEN[_FILE]` | API authentication | required |
