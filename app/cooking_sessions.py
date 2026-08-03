@@ -19,16 +19,19 @@ from app.home_assistant import (
     select_next_for_owner,
 )
 from app.ingredient_names import alias_map
+from app.consumption import create_review_for_session
 from app.models import (
     CookingSession,
     CookingTimer,
     HomeAssistantSelection,
     PantryItem,
+    ConsumptionReview,
 )
 from app.recommendations import (
     MEALIE_BASE_URL,
     get_recipe_detail_cached,
     ingredient_label,
+    ignored_ingredient,
     inventory_matches_ingredient,
 )
 from app.schemas import (
@@ -111,6 +114,7 @@ def _ingredients(recipe: dict[str, Any]) -> list[dict[str, Any]]:
             "quantity": item.get("quantity", item.get("quantityValue")),
             "unit": str(unit).strip() if unit else None,
             "note": item.get("note"),
+            "ignored": ignored_ingredient(item),
         })
     return result
 
@@ -230,6 +234,7 @@ def session_payload(db: Session, row: CookingSession) -> dict[str, Any]:
     snapshot = _snapshot(row)
     now = clock_now()
     timers = _timers(db, row.id)
+    review = db.scalar(select(ConsumptionReview).where(ConsumptionReview.cooking_session_id == row.id))
     return {
         "id": row.id,
         "owner": row.owner,
@@ -245,6 +250,7 @@ def session_payload(db: Session, row: CookingSession) -> dict[str, Any]:
         "cancelled_at": _utc(row.cancelled_at),
         "timers": [_timer_payload(timer, now) for timer in timers],
         "inventory_consumption_preview": inventory_consumption_preview(db, snapshot),
+        "consumption_review": ({"id": review.id, "status": review.status, "url": f"/consumption#review-{review.id}"} if review else None),
     }
 
 
@@ -253,6 +259,8 @@ def inventory_consumption_preview(db: Session, snapshot: dict[str, Any]) -> list
     aliases = alias_map(db)
     result = []
     for ingredient in snapshot.get("ingredients", []):
+        if ingredient.get("ignored"):
+            continue
         name = str(ingredient.get("name") or ingredient.get("display") or "")
         matches = [item for item in inventory if inventory_matches_ingredient(item.name, name, aliases)]
         result.append({
@@ -420,6 +428,7 @@ async def finish_session(session_id: int, payload: CookingSessionFinishRequest, 
                     servings=row.servings,
                     notes=marker,
                 ), db, idempotency_notes=marker)
+            create_review_for_session(db, row, _snapshot(row))
             row.status = "completed"
             row.completed_at = now
             if payload.select_next:
