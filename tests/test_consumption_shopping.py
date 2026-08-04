@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+import re
+import shutil
+import subprocess
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,6 +12,7 @@ from sqlalchemy.orm import Session
 
 import app.cooking_sessions as cooking
 import app.shopping as shopping
+from app.shopping_ui import HTML as SHOPPING_HTML
 from app.api_auth import read_api_token
 from app.consumption import build_consumption_proposal
 from app.database import Base, get_db
@@ -443,3 +447,49 @@ def test_shopping_priority_and_stable_order(client_db):
         "/api/v1/shopping-list?owner=household", headers=TOKEN
     ).json()
     assert [row["name"] for row in rows] == ["高", "普通一", "普通二", "低"]
+
+
+def test_shopping_page_tabs_status_actions_and_empty_states():
+    for status, label in (
+        ("active", "待购买"),
+        ("completed", "已完成"),
+        ("dismissed", "已忽略"),
+    ):
+        assert f'id="tab-{status}"' in SHOPPING_HTML
+        assert label in SHOPPING_HTML
+    assert 'class="tab active-tab" aria-pressed="true"' in SHOPPING_HTML
+    assert "let current='active'" in SHOPPING_HTML
+    assert "classList.toggle('active-tab',selected)" in SHOPPING_HTML
+    assert "setAttribute('aria-pressed',String(selected))" in SHOPPING_HTML
+    assert "if(x.status==='active')return" in SHOPPING_HTML
+    assert "永久删除" in SHOPPING_HTML
+    assert "恢复到待购买" in SHOPPING_HTML
+    assert "method:'DELETE'" in SHOPPING_HTML
+    assert "?owner=household" in SHOPPING_HTML
+    assert "确认永久删除该购物项吗？此操作不能撤销。" in SHOPPING_HTML
+    assert "暂无待购买项目" in SHOPPING_HTML
+    assert "暂无已完成项目" in SHOPPING_HTML
+    assert "暂无已忽略项目" in SHOPPING_HTML
+    assert "completed_at" in SHOPPING_HTML
+    assert "dismissed_at" in SHOPPING_HTML
+    active_branch = SHOPPING_HTML.split("if(x.status==='active')return", 1)[1].split(
+        ";return", 1
+    )[0]
+    assert "deleteItem" not in active_branch
+
+
+def test_generated_shopping_javascript_passes_node_check(tmp_path):
+    node = shutil.which("node")
+    if node is None:
+        pytest.skip("node is not installed")
+    script = re.search(r"<script>(.*)</script>", SHOPPING_HTML, re.DOTALL)
+    assert script is not None
+    script_path = tmp_path / "shopping.js"
+    script_path.write_text(script.group(1), encoding="utf-8")
+    result = subprocess.run(
+        [node, "--check", str(script_path)],
+        capture_output=True,
+        check=False,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
