@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+import json
 import re
 import shutil
 import subprocess
@@ -12,6 +13,10 @@ from sqlalchemy.orm import Session
 
 import app.cooking_sessions as cooking
 import app.shopping as shopping
+from app.cooking_ui import COOKING_HTML
+from app.consumption_ui import HTML as CONSUMPTION_HTML
+from app.pantry_ui import PANTRY_HTML, RECOMMENDATIONS_HTML
+from app.quality_ui import HTML as QUALITY_HTML
 from app.shopping_ui import HTML as SHOPPING_HTML
 from app.api_auth import read_api_token
 from app.consumption import build_consumption_proposal
@@ -19,13 +24,52 @@ from app.database import Base, get_db
 from app.main import app
 from app.models import (
     ConsumptionReview,
+    CookingSession,
     InventoryAdjustment,
     PantryItem,
     ShoppingListItem,
 )
+from app.units import (
+    normalize_unit,
+    unit_match_reason,
+    units_compatible,
+    units_merge_compatible,
+)
 
 
 TOKEN = {"X-Food-Assistant-Token": "example-development-token-00000000"}
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [
+        ("g", "克"),
+        ("ml", "毫升"),
+        ("tbsp", "汤匙"),
+        ("tsp", "茶匙"),
+        ("kg", "公斤"),
+        (None, None),
+        (" GRAMS. ", "克"),
+    ],
+)
+def test_equivalent_units_are_compatible(left, right):
+    assert units_compatible(left, right)
+
+
+@pytest.mark.parametrize(
+    ("left", "right"),
+    [("g", "kg"), ("ml", "l"), (None, "g"), ("适量", "适量"), ("个", "枚")],
+)
+def test_non_equivalent_units_are_not_compatible(left, right):
+    assert not units_compatible(left, right)
+
+
+def test_unit_normalization_is_comparison_only():
+    assert normalize_unit(" 公克。 ") == "g"
+    assert normalize_unit("少许") is None
+    assert unit_match_reason("克", "g") == "equivalent spelling"
+    assert units_merge_compatible("盒", " 盒 ")
+    assert not units_merge_compatible("适量", "适量")
 
 
 def recipe(slug: str = "tomato-eggs") -> dict:
@@ -114,6 +158,27 @@ def test_finish_creates_one_stable_pending_review_and_ignores_water(client_db):
         "西红柿",
     ]
     assert payload["proposal"][0]["suggested_action"] == "deduct"
+
+
+def test_equivalent_unit_proposal_and_confirm_preserve_raw_units(client_db):
+    client, session = client_db
+    pantry = PantryItem(
+        name="鸡蛋", normalized_name="鸡蛋", quantity=100, unit="g", owner="household"
+    )
+    session.add(pantry)
+    session.commit()
+    proposal = build_consumption_proposal(
+        session,
+        "household",
+        {"ingredients": [{"name": "鸡蛋", "quantity": 2, "unit": "克"}]},
+    )[0]
+    assert proposal["quantity_compatible"] is True
+    assert proposal["recipe_unit"] == "克"
+    assert proposal["pantry_unit"] == "g"
+    assert proposal["recipe_unit_normalized"] == "g"
+    assert proposal["pantry_unit_normalized"] == "g"
+    assert proposal["unit_family"] == "mass"
+    assert proposal["unit_match_reason"] == "equivalent spelling"
 
 
 def test_matching_exact_alias_ambiguous_none_unknown_and_conflict(tmp_path):
@@ -336,6 +401,78 @@ def test_shopping_dedup_complete_restock_and_pages(client_db):
     )
 
 
+def test_data_quality_summary_is_local_read_only_and_authenticated(client_db):
+    client, session = client_db
+    session.add(
+        CookingSession(
+            id=999,
+            owner="household",
+            mealie_slug="quality-test",
+            recipe_name="测试菜谱",
+            recipe_snapshot_json="{}",
+            status="completed",
+            current_step_index=0,
+        )
+    )
+    session.flush()
+    session.add_all(
+        [
+            PantryItem(
+                name="盐", normalized_name="盐", quantity=None, unit=None, owner="household"
+            ),
+            PantryItem(
+                name="食盐", normalized_name="盐", quantity=1, unit="适量", owner="household"
+            ),
+            ShoppingListItem(
+                owner="household",
+                name="牛奶",
+                normalized_name="牛奶",
+                quantity=None,
+                unit=None,
+                status="active",
+                priority="normal",
+                source="manual",
+            ),
+            ConsumptionReview(
+                cooking_session_id=999,
+                owner="household",
+                recipe_name="测试菜谱",
+                mealie_slug="quality-test",
+                status="pending",
+                proposal_json=json.dumps(
+                    [
+                        {"match_type": "ambiguous", "quantity_compatible": False},
+                        {"match_type": "none", "quantity_compatible": False},
+                        {
+                            "match_type": "exact",
+                            "matched_pantry_item_id": 1,
+                            "quantity_compatible": False,
+                        },
+                    ]
+                ),
+            ),
+        ]
+    )
+    session.commit()
+    assert client.get("/api/v1/data-quality/summary").status_code == 401
+    response = client.get("/api/v1/data-quality/summary", headers=TOKEN)
+    assert response.status_code == 200
+    data = response.json()
+    assert data["inventory_unknown_quantity"] == 1
+    assert data["inventory_missing_unit"] == 1
+    assert data["inventory_unrecognized_unit"] == 1
+    assert data["duplicate_normalized_names"] == 1
+    assert data["pending_consumption_reviews"] == 1
+    assert data["ambiguous_consumption_matches"] == 1
+    assert data["unmatched_consumption_ingredients"] == 1
+    assert data["incompatible_unit_matches"] == 1
+    assert data["shopping_items_missing_quantity"] == 1
+    assert data["shopping_items_missing_unit"] == 1
+    assert "proposal_json" not in response.text
+    assert TOKEN["X-Food-Assistant-Token"] not in response.text
+    assert client.get("/quality").status_code == 200
+
+
 @pytest.mark.parametrize(
     ("existing_quantity", "incoming_quantity", "expected_quantity"),
     [
@@ -478,11 +615,22 @@ def test_shopping_page_tabs_status_actions_and_empty_states():
     assert "deleteItem" not in active_branch
 
 
-def test_generated_shopping_javascript_passes_node_check(tmp_path):
+@pytest.mark.parametrize(
+    "html",
+    [
+        PANTRY_HTML,
+        RECOMMENDATIONS_HTML,
+        COOKING_HTML,
+        CONSUMPTION_HTML,
+        SHOPPING_HTML,
+        QUALITY_HTML,
+    ],
+)
+def test_generated_page_javascript_passes_node_check(tmp_path, html):
     node = shutil.which("node")
     if node is None:
         pytest.skip("node is not installed")
-    script = re.search(r"<script>(.*)</script>", SHOPPING_HTML, re.DOTALL)
+    script = re.search(r"<script>(.*)</script>", html, re.DOTALL)
     assert script is not None
     script_path = tmp_path / "shopping.js"
     script_path.write_text(script.group(1), encoding="utf-8")
@@ -493,3 +641,29 @@ def test_generated_shopping_javascript_passes_node_check(tmp_path):
         text=True,
     )
     assert result.returncode == 0, result.stderr
+
+
+def test_all_pages_use_shared_navigation_token_and_feedback():
+    pages = [
+        PANTRY_HTML,
+        RECOMMENDATIONS_HTML,
+        COOKING_HTML,
+        CONSUMPTION_HTML,
+        SHOPPING_HTML,
+        QUALITY_HTML,
+    ]
+    for html in pages:
+        assert "foodAssistantApiToken" in html
+        for path, label in [
+            ("/cook", "厨房"),
+            ("/pantry", "库存"),
+            ("/recommendations", "推荐"),
+            ("/consumption", "消耗确认"),
+            ("/shopping", "购物清单"),
+            ("/quality", "数据质量"),
+        ]:
+            assert path in html
+            assert label in html
+        assert 'id="error"' in html
+        assert "success" in html
+        assert "site-nav" in html
