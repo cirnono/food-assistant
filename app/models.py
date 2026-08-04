@@ -210,6 +210,75 @@ class CookingTimer(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
 
 
+class ConsumptionReview(Base):
+    __tablename__ = "consumption_reviews"
+    __table_args__ = (
+        UniqueConstraint("cooking_session_id", name="uq_consumption_review_session"),
+        CheckConstraint("status IN ('pending', 'confirmed', 'dismissed')", name="ck_consumption_review_status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    cooking_session_id: Mapped[int] = mapped_column(ForeignKey("cooking_sessions.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    recipe_name: Mapped[str] = mapped_column(String(300), nullable=False)
+    mealie_slug: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
+    proposal_json: Mapped[str] = mapped_column(Text, nullable=False)
+    confirmed_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class ShoppingListItem(Base):
+    __tablename__ = "shopping_list_items"
+    __table_args__ = (
+        CheckConstraint("status IN ('active', 'completed', 'dismissed')", name="ck_shopping_status"),
+        CheckConstraint("priority IN ('low', 'normal', 'high')", name="ck_shopping_priority"),
+        CheckConstraint("source IN ('manual', 'low_stock', 'out_of_stock', 'recipe_missing', 'consumption_review')", name="ck_shopping_source"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    owner: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(160), nullable=False)
+    normalized_name: Mapped[str] = mapped_column(String(160), nullable=False, index=True)
+    quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="active", index=True)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal", index=True)
+    source: Mapped[str] = mapped_column(String(30), nullable=False, default="manual", index=True)
+    pantry_item_id: Mapped[int | None] = mapped_column(ForeignKey("pantry_items.id", ondelete="SET NULL"), nullable=True, index=True)
+    consumption_review_id: Mapped[int | None] = mapped_column(ForeignKey("consumption_reviews.id", ondelete="SET NULL"), nullable=True, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now, onupdate=utc_now)
+
+
+class InventoryAdjustment(Base):
+    __tablename__ = "inventory_adjustments"
+    __table_args__ = (
+        CheckConstraint("adjustment_type IN ('consumption', 'consume_all', 'restock', 'manual_correction', 'reversal')", name="ck_inventory_adjustment_type"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    pantry_item_id: Mapped[int | None] = mapped_column(ForeignKey("pantry_items.id", ondelete="SET NULL"), nullable=True, index=True)
+    consumption_review_id: Mapped[int | None] = mapped_column(ForeignKey("consumption_reviews.id", ondelete="SET NULL"), nullable=True, index=True)
+    shopping_list_item_id: Mapped[int | None] = mapped_column(ForeignKey("shopping_list_items.id", ondelete="SET NULL"), nullable=True, index=True)
+    owner: Mapped[str] = mapped_column(String(40), nullable=False, index=True)
+    adjustment_type: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    quantity_before: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity_change: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quantity_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+    unit: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reversed_by_adjustment_id: Mapped[int | None] = mapped_column(ForeignKey("inventory_adjustments.id", ondelete="SET NULL"), nullable=True)
+
+
 class RecipeSource(Base):
     __tablename__ = "recipe_sources"
 

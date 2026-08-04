@@ -7,7 +7,7 @@ sensor:
       Authorization: !secret food_assistant_authorization
       Accept: application/json
     value_template: "{{ value_json.status | default('unavailable') }}"
-    json_attributes: [inventory, recommendations, selected_recipe, active_cooking, links, generated_at]
+    json_attributes: [inventory, recommendations, selected_recipe, active_cooking, shopping, links, generated_at]
     scan_interval: 300
     timeout: 120
   - platform: rest
@@ -97,6 +97,24 @@ template:
       - name: Food Assistant Cooking URL
         unique_id: food_assistant_cooking_url
         state: "{{ state_attr('sensor.food_assistant_cooking', 'links').cooking | default('') }}"
+      - name: Food Assistant Shopping Count
+        unique_id: food_assistant_shopping_count
+        state: "{{ state_attr('sensor.food_assistant', 'shopping').active_count | default(0) }}"
+      - name: Food Assistant Shopping High Priority
+        unique_id: food_assistant_shopping_high_priority
+        state: "{{ state_attr('sensor.food_assistant', 'shopping').high_priority_count | default(0) }}"
+      - name: Food Assistant Pending Consumption
+        unique_id: food_assistant_pending_consumption
+        state: "{{ state_attr('sensor.food_assistant', 'shopping').pending_consumption_reviews | default(0) }}"
+      - name: Food Assistant Shopping Preview
+        unique_id: food_assistant_shopping_preview
+        state: "{{ state_attr('sensor.food_assistant', 'shopping').next_items | default([]) | map(attribute='name') | join('、') }}"
+      - name: Food Assistant Consumption URL
+        unique_id: food_assistant_consumption_url
+        state: "{{ state_attr('sensor.food_assistant', 'links').consumption | default('') }}"
+      - name: Food Assistant Shopping URL
+        unique_id: food_assistant_shopping_url
+        state: "{{ state_attr('sensor.food_assistant', 'links').shopping | default('') }}"
 
 rest_command:
   food_assistant_next_recipe:

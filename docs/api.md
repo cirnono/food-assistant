@@ -1,5 +1,14 @@
 # API
 
+## Consumption and shopping (0.25.0)
+
+- `GET /api/v1/consumption-reviews` and `/pending` list stable post-cooking proposals.
+- `POST /api/v1/consumption-reviews/{id}/confirm`, `/dismiss`, and `/undo` require matching owner and confirmation IDs. Confirmation is transactional and undo writes reversal audit rows.
+- `GET/POST /api/v1/shopping-list`, `PATCH /api/v1/shopping-list/{id}`, and the `/complete`, `/dismiss`, `/restore` actions manage the local list.
+- `POST /api/v1/shopping-list/from-recipe` revalidates current recipe ingredients server-side; it does not trust arbitrary browser names.
+
+No cooking-finish or proposal endpoint changes inventory. Shopping additions caused by consumption happen only when explicitly requested during confirmation.
+
 ## Cooking sessions
 
 All `/api/v1/cooking-sessions/*` endpoints use the existing Food Assistant API

@@ -7,7 +7,7 @@ from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.cooking_history import record_cooked_recipe
@@ -17,6 +17,8 @@ from app.models import (
     CookingSession,
     HomeAssistantSelection,
     HomeAssistantSelectionHistory,
+    ConsumptionReview,
+    ShoppingListItem,
 )
 from app.recommendations import build_recommendations, clear_recipe_detail_cache
 from app.schemas import (
@@ -93,7 +95,10 @@ def _recent_selection_slugs(db: Session, owner: str) -> set[str]:
     statement = (
         select(HomeAssistantSelectionHistory.mealie_slug)
         .where(HomeAssistantSelectionHistory.owner == owner)
-        .order_by(HomeAssistantSelectionHistory.selected_at.desc(), HomeAssistantSelectionHistory.id.desc())
+        .order_by(
+            HomeAssistantSelectionHistory.selected_at.desc(),
+            HomeAssistantSelectionHistory.id.desc(),
+        )
         .limit(5)
     )
     return set(db.scalars(statement).all())
@@ -125,11 +130,13 @@ def _save_selection(
         selection.selected_name = str(snapshot["name"])
         selection.selected_payload_json = json.dumps(snapshot, ensure_ascii=False)
         selection.selected_at = now
-        db.add(HomeAssistantSelectionHistory(
-            owner=filters.owner,
-            mealie_slug=selection.selected_slug,
-            selected_at=now,
-        ))
+        db.add(
+            HomeAssistantSelectionHistory(
+                owner=filters.owner,
+                mealie_slug=selection.selected_slug,
+                selected_at=now,
+            )
+        )
     db.flush()
     return selection
 
@@ -143,15 +150,20 @@ def _choose_next(
 ) -> dict[str, Any] | None:
     recent = _recent_selection_slugs(db, owner)
     preferred = [
-        recipe for recipe in candidates
+        recipe
+        for recipe in candidates
         if recipe.get("slug") != current_slug and recipe.get("slug") not in recent
     ]
-    alternatives = [recipe for recipe in candidates if recipe.get("slug") != current_slug]
+    alternatives = [
+        recipe for recipe in candidates if recipe.get("slug") != current_slug
+    ]
     pool = preferred or alternatives or candidates
     return random.Random(seed).choice(pool) if pool else None
 
 
-async def _recommendation_result(db: Session, filters: HomeAssistantFilters) -> dict[str, Any]:
+async def _recommendation_result(
+    db: Session, filters: HomeAssistantFilters
+) -> dict[str, Any]:
     return await build_recommendations(
         db,
         limit=10_000,
@@ -185,7 +197,10 @@ async def select_next_for_owner(
         seed,
     )
     if chosen is None:
-        raise HTTPException(status_code=409, detail="No recipe candidates are available for this mode and filters")
+        raise HTTPException(
+            status_code=409,
+            detail="No recipe candidates are available for this mode and filters",
+        )
     selection = _save_selection(db, filters, chosen, seed=seed)
     if commit:
         db.commit()
@@ -204,11 +219,15 @@ def _inventory_payload(db: Session) -> dict[str, int]:
     }
 
 
-def _active_cooking_payload(request: Request, db: Session, owner: str) -> dict[str, Any]:
-    row = db.scalar(select(CookingSession).where(
-        CookingSession.owner == owner,
-        CookingSession.status == "active",
-    ))
+def _active_cooking_payload(
+    request: Request, db: Session, owner: str
+) -> dict[str, Any]:
+    row = db.scalar(
+        select(CookingSession).where(
+            CookingSession.owner == owner,
+            CookingSession.status == "active",
+        )
+    )
     if row is None:
         return {"status": "idle", "session_id": None, "cooking_url": None}
     try:
@@ -225,7 +244,9 @@ def _active_cooking_payload(request: Request, db: Session, owner: str) -> dict[s
         "mealie_slug": row.mealie_slug,
         "current_step_index": row.current_step_index,
         "step_count": count,
-        "progress_percent": round((row.current_step_index + 1) / count * 100, 1) if count else 0,
+        "progress_percent": round((row.current_step_index + 1) / count * 100, 1)
+        if count
+        else 0,
         "cooking_url": f"{base_url}/cook",
     }
 
@@ -260,6 +281,51 @@ async def _state(
             db.commit()
 
     base_url = str(request.base_url).rstrip("/")
+    active_shopping = list(
+        db.scalars(
+            select(ShoppingListItem)
+            .where(
+                ShoppingListItem.owner == filters.owner,
+                ShoppingListItem.status == "active",
+            )
+            .order_by(ShoppingListItem.priority.desc(), ShoppingListItem.id)
+            .limit(5)
+        ).all()
+    )
+    active_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(ShoppingListItem)
+            .where(
+                ShoppingListItem.owner == filters.owner,
+                ShoppingListItem.status == "active",
+            )
+        )
+        or 0
+    )
+    high_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(ShoppingListItem)
+            .where(
+                ShoppingListItem.owner == filters.owner,
+                ShoppingListItem.status == "active",
+                ShoppingListItem.priority == "high",
+            )
+        )
+        or 0
+    )
+    pending_count = (
+        db.scalar(
+            select(func.count())
+            .select_from(ConsumptionReview)
+            .where(
+                ConsumptionReview.owner == filters.owner,
+                ConsumptionReview.status == "pending",
+            )
+        )
+        or 0
+    )
     return {
         "status": "ok",
         "version": 1,
@@ -273,9 +339,25 @@ async def _state(
         },
         "selected_recipe": _safe_snapshot(selected) if selected else None,
         "active_cooking": _active_cooking_payload(request, db, filters.owner),
+        "shopping": {
+            "active_count": active_count,
+            "high_priority_count": high_count,
+            "pending_consumption_reviews": pending_count,
+            "next_items": [
+                {
+                    "name": item.name,
+                    "quantity": item.quantity,
+                    "unit": item.unit,
+                    "priority": item.priority,
+                }
+                for item in active_shopping
+            ],
+        },
         "links": {
             "pantry": f"{base_url}/pantry",
             "recommendations": f"{base_url}/recommendations",
+            "consumption": f"{base_url}/consumption",
+            "shopping": f"{base_url}/shopping",
         },
     }
 
@@ -284,7 +366,9 @@ async def _state(
 async def home_assistant_state(
     request: Request,
     owner: str = Query("household", min_length=1, max_length=40),
-    mode: str = Query("ready_now", pattern="^(ready_now|missing_one_or_two|use_soon|random_pick)$"),
+    mode: str = Query(
+        "ready_now", pattern="^(ready_now|missing_one_or_two|use_soon|random_pick)$"
+    ),
     max_missing: int = Query(2, ge=0, le=50),
     max_total_time: int | None = Query(None, ge=1),
     category: str | None = Query(None, max_length=160),
@@ -334,7 +418,10 @@ async def mark_selection_cooked(
     async with _owner_lock(payload.owner):
         selection = _get_selection(db, payload.owner)
         if selection is None or selection.selected_slug != payload.confirm_slug:
-            raise HTTPException(status_code=409, detail="confirm_slug does not match the current selection")
+            raise HTTPException(
+                status_code=409,
+                detail="confirm_slug does not match the current selection",
+            )
         filters = _filters_from_selection(selection)
         try:
             record_cooked_recipe(
@@ -354,9 +441,14 @@ async def mark_selection_cooked(
                 result = await _recommendation_result(db, filters)
                 candidates = _candidate_group(result, filters.mode)
                 seed = random.SystemRandom().randint(1, 2_147_483_647)
-                chosen = _choose_next(db, payload.owner, candidates, selection.selected_slug, seed)
+                chosen = _choose_next(
+                    db, payload.owner, candidates, selection.selected_slug, seed
+                )
                 if chosen is None:
-                    raise HTTPException(status_code=409, detail="Cooking was not recorded because no next recipe is available")
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Cooking was not recorded because no next recipe is available",
+                    )
                 _save_selection(db, filters, chosen, seed=seed)
             db.commit()
         except Exception:
@@ -374,6 +466,10 @@ async def refresh_home_assistant_state(
     if payload.refresh_recipe_cache:
         await clear_recipe_detail_cache()
     selection = _get_selection(db, payload.owner)
-    filters = _filters_from_selection(selection) if selection else HomeAssistantFilters(owner=payload.owner)
+    filters = (
+        _filters_from_selection(selection)
+        if selection
+        else HomeAssistantFilters(owner=payload.owner)
+    )
     async with _owner_lock(payload.owner):
         return await _state(request, db, filters)

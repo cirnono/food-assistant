@@ -6,6 +6,21 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.25.0] - 2026-08-04
+
+### Added
+
+- Stable, owner-scoped consumption reviews created when cooking sessions finish.
+- Transactional pantry consumption, immutable adjustment audit records, and reversal-based undo.
+- Household shopping list APIs and responsive `/consumption` and `/shopping` interfaces.
+- Optional low/out-of-stock shopping suggestions after explicit consumption confirmation.
+- Home Assistant shopping counts, pending-consumption state, preview sensors, and dashboard links.
+
+### Changed
+
+- Cooking completion queues inventory consumption for confirmation without changing pantry quantities.
+- Recommendation cards can add server-validated missing ingredients to the local shopping list.
+
 ## [0.24.0] - 2026-08-02
 
 ### Added

@@ -73,6 +73,11 @@ def init_database() -> None:
 
 def ensure_schema_migrations() -> None:
     """Apply small SQLite migrations for existing installations."""
+    from app import models  # noqa: F401
+
+    # create_all is additive and idempotent: it preserves legacy rows while
+    # creating new feature tables and indexes for existing installations.
+    Base.metadata.create_all(bind=engine)
     with engine.begin() as connection:
         pantry_rows = connection.exec_driver_sql(
             "PRAGMA table_info(pantry_items)"
@@ -95,15 +100,9 @@ def ensure_schema_migrations() -> None:
             "PRAGMA table_info(source_recipes)"
         ).fetchall()
 
-        columns = {
-            str(row[1])
-            for row in rows
-        }
+        columns = {str(row[1]) for row in rows}
 
-        if (
-            rows
-            and "search_text" not in columns
-        ):
+        if rows and "search_text" not in columns:
             connection.exec_driver_sql(
                 "ALTER TABLE source_recipes "
                 "ADD COLUMN search_text "
