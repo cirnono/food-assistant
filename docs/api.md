@@ -1,5 +1,12 @@
 # API
 
+## Data quality (0.25.1)
+
+`GET /api/v1/data-quality/summary` returns local, read-only counts for incomplete
+inventory and shopping records plus safe consumption-match totals. It requires
+the normal API token and never calls Mealie, Home Assistant, or an LLM. The
+response intentionally excludes proposal and confirmation JSON bodies.
+
 ## Consumption and shopping (0.25.0)
 
 - `GET /api/v1/consumption-reviews` and `/pending` list stable post-cooking proposals.
