@@ -75,6 +75,11 @@ Choose the recommendation mode from the dashboard's native selector:
 - `missing_one_or_two`: recipes missing one or two ingredients.
 - `use_soon`: prioritize ingredients approaching expiry.
 
+On first installation, when Home Assistant has no state to restore, the selector
+will usually start with the first option, `ready_now`. After the user chooses a
+mode, Home Assistant restores that last state across restarts. For everyday
+household use, consider selecting `missing_one_or_two`.
+
 Unknown or unavailable selector states safely fall back to `ready_now`; the
 package never sends arbitrary selector text. To refresh both REST sensors from
 Developer Tools, use the service data form expected by Home Assistant:

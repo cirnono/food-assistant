@@ -29,7 +29,6 @@ input_select:
       - ready_now
       - missing_one_or_two
       - use_soon
-    initial: ready_now
     icon: mdi:tune-variant
 
 template:

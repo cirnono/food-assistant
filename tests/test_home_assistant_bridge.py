@@ -259,7 +259,9 @@ def test_update_entity_data_and_recommendation_mode_are_safe():
     path = "integrations/home-assistant/food_assistant_package.yaml.example"
     text = open(path, encoding="utf-8").read()
     payload = yaml.load(text, Loader=SecretLoader)
-    assert payload["input_select"]["food_assistant_recommendation_mode"]["options"] == [
+    recommendation_mode = payload["input_select"]["food_assistant_recommendation_mode"]
+    assert "initial" not in recommendation_mode
+    assert recommendation_mode["options"] == [
         "ready_now",
         "missing_one_or_two",
         "use_soon",
