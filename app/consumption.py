@@ -18,14 +18,10 @@ from app.models import (
     utc_now,
 )
 from app.schemas import ConsumptionActionRequest, ConsumptionConfirmRequest
+from app.units import normalize_unit, unit_family, unit_match_reason, units_compatible
 
 
 router = APIRouter(prefix="/api/v1/consumption-reviews", tags=["consumption reviews"])
-
-
-def units_compatible(left: str | None, right: str | None) -> bool:
-    """Only identical normalized units are compatible; no implicit conversion."""
-    return normalize_name(left) == normalize_name(right)
 
 
 def build_consumption_proposal(
@@ -125,10 +121,14 @@ def build_consumption_proposal(
                 "recipe_ingredient_name": name,
                 "recipe_quantity": recipe_quantity,
                 "recipe_unit": recipe_unit,
+                "recipe_unit_normalized": normalize_unit(recipe_unit),
                 "matched_pantry_item_id": item.id if item else None,
                 "matched_pantry_name": item.name if item else None,
                 "pantry_quantity_before": item.quantity if item else None,
                 "pantry_unit": item.unit if item else None,
+                "pantry_unit_normalized": normalize_unit(item.unit) if item else None,
+                "unit_family": unit_family(recipe_unit) or (unit_family(item.unit) if item else None),
+                "unit_match_reason": unit_match_reason(recipe_unit, item.unit if item else None),
                 "candidate_pantry_items": [
                     {
                         "id": x.id,

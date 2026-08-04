@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
-from app.consumption import adjustment_payload, units_compatible
+from app.consumption import adjustment_payload
 from app.database import get_db
 from app.ingredient_names import alias_map, canonicalize, normalize_name
 from app.models import InventoryAdjustment, PantryItem, ShoppingListItem, utc_now
@@ -23,6 +23,7 @@ from app.schemas import (
     ShoppingListCreate,
     ShoppingListUpdate,
 )
+from app.units import units_merge_compatible
 
 
 router = APIRouter(prefix="/api/v1/shopping-list", tags=["shopping list"])
@@ -78,7 +79,7 @@ def add_or_merge(db: Session, values: dict[str, Any]) -> tuple[ShoppingListItem,
         ).all()
     )
     existing = next(
-        (item for item in active_matches if units_compatible(item.unit, unit)), None
+        (item for item in active_matches if units_merge_compatible(item.unit, unit)), None
     )
     if existing:
         incoming_quantity = values.get("quantity")
@@ -218,7 +219,7 @@ def complete_item(
                 raise HTTPException(
                     status_code=422, detail="Restock quantity is required"
                 )
-            if not units_compatible(restock.unit, pantry.unit):
+            if not units_merge_compatible(restock.unit, pantry.unit):
                 raise HTTPException(
                     status_code=409, detail="Restock and pantry units are incompatible"
                 )
