@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 
 import app.cooking_sessions as cooking
+import app.shopping as shopping
 from app.api_auth import read_api_token
 from app.consumption import build_consumption_proposal
 from app.database import Base, get_db
@@ -54,6 +55,7 @@ def client_db(
 
     app.dependency_overrides[get_db] = override_db
     monkeypatch.setattr(cooking, "get_recipe_detail_cached", fake_detail)
+    monkeypatch.setattr(shopping, "get_recipe_detail_cached", fake_detail)
     read_api_token.cache_clear()
     with TestClient(app) as client:
         yield client, session
@@ -328,3 +330,116 @@ def test_shopping_dedup_complete_restock_and_pages(client_db):
         )
         == 1
     )
+
+
+@pytest.mark.parametrize(
+    ("existing_quantity", "incoming_quantity", "expected_quantity"),
+    [
+        (12, 3, 15),
+        (12, None, 12),
+        (None, 3, 3),
+        (None, None, None),
+    ],
+)
+def test_shopping_merge_quantity_states(
+    client_db, existing_quantity, incoming_quantity, expected_quantity
+):
+    client, _ = client_db
+    base = {
+        "owner": "household",
+        "name": "鸡蛋",
+        "quantity": existing_quantity,
+        "unit": "个",
+        "priority": "high",
+        "source": "manual",
+    }
+    first = client.post("/api/v1/shopping-list", headers=TOKEN, json=base).json()
+    incoming = {
+        **base,
+        "quantity": incoming_quantity,
+        "priority": "low",
+        "source": "recipe_missing",
+    }
+    merged = client.post("/api/v1/shopping-list", headers=TOKEN, json=incoming).json()
+    assert merged["id"] == first["id"]
+    assert merged["quantity"] == expected_quantity
+    assert merged["priority"] == "high"
+    assert merged["source"] == "manual"
+
+
+def test_shopping_incompatible_units_do_not_merge(client_db):
+    client, _ = client_db
+    common = {
+        "owner": "household",
+        "name": "牛奶",
+        "quantity": 1,
+        "priority": "normal",
+        "source": "manual",
+    }
+    first = client.post(
+        "/api/v1/shopping-list", headers=TOKEN, json={**common, "unit": "盒"}
+    ).json()
+    second = client.post(
+        "/api/v1/shopping-list", headers=TOKEN, json={**common, "unit": "升"}
+    ).json()
+    assert first["id"] != second["id"]
+    assert len(
+        client.get("/api/v1/shopping-list?owner=household", headers=TOKEN).json()
+    ) == 2
+
+
+def test_recipe_missing_does_not_clear_known_shopping_quantity(client_db):
+    client, _ = client_db
+    existing = client.post(
+        "/api/v1/shopping-list",
+        headers=TOKEN,
+        json={
+            "owner": "household",
+            "name": "鸡蛋",
+            "quantity": 12,
+            "unit": None,
+            "priority": "normal",
+            "source": "manual",
+        },
+    ).json()
+    response = client.post(
+        "/api/v1/shopping-list/from-recipe",
+        headers=TOKEN,
+        json={
+            "owner": "household",
+            "mealie_slug": "tomato-eggs",
+            "confirm_slug": "tomato-eggs",
+            "selected_missing_ingredients": ["鸡蛋"],
+        },
+    )
+    assert response.status_code == 200
+    merged = response.json()["items"][0]
+    assert merged["id"] == existing["id"]
+    assert merged["quantity"] == 12
+    assert merged["source"] == "manual"
+
+
+def test_shopping_priority_and_stable_order(client_db):
+    client, _ = client_db
+    for name, priority in [
+        ("低", "low"),
+        ("普通一", "normal"),
+        ("高", "high"),
+        ("普通二", "normal"),
+    ]:
+        assert client.post(
+            "/api/v1/shopping-list",
+            headers=TOKEN,
+            json={
+                "owner": "household",
+                "name": name,
+                "quantity": None,
+                "unit": None,
+                "priority": priority,
+                "source": "manual",
+            },
+        ).status_code == 201
+    rows = client.get(
+        "/api/v1/shopping-list?owner=household", headers=TOKEN
+    ).json()
+    assert [row["name"] for row in rows] == ["高", "普通一", "普通二", "低"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import or_, select
+from sqlalchemy import case, or_, select
 from sqlalchemy.orm import Session
 
 from app.consumption import adjustment_payload, units_compatible
@@ -81,11 +81,11 @@ def add_or_merge(db: Session, values: dict[str, Any]) -> tuple[ShoppingListItem,
         (item for item in active_matches if units_compatible(item.unit, unit)), None
     )
     if existing:
-        quantity = values.get("quantity")
-        if existing.quantity is not None and quantity is not None:
-            existing.quantity += quantity
-        elif quantity is None:
-            existing.quantity = None
+        incoming_quantity = values.get("quantity")
+        if existing.quantity is not None and incoming_quantity is not None:
+            existing.quantity += incoming_quantity
+        elif existing.quantity is None and incoming_quantity is not None:
+            existing.quantity = incoming_quantity
         if values.get("priority") == "high":
             existing.priority = "high"
         return existing, False
@@ -126,8 +126,14 @@ def list_items(
         query = query.where(ShoppingListItem.priority == priority)
     if source:
         query = query.where(ShoppingListItem.source == source)
+    priority_rank = case(
+        (ShoppingListItem.priority == "high", 0),
+        (ShoppingListItem.priority == "normal", 1),
+        (ShoppingListItem.priority == "low", 2),
+        else_=3,
+    )
     rows = db.scalars(
-        query.order_by(ShoppingListItem.priority.desc(), ShoppingListItem.id)
+        query.order_by(priority_rank, ShoppingListItem.id)
         .offset(offset)
         .limit(limit)
     ).all()
