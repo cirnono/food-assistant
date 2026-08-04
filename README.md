@@ -1,6 +1,6 @@
 # Food Assistant
 
-Version 0.25.0 adds explicit post-cooking inventory consumption review, audited and reversible pantry adjustments, and a local household shopping list. Use `/consumption` to confirm actual usage and `/shopping` to manage purchases and optional restocking. Production upgrades must take a SQLite online backup before deployment.
+Version 0.25.1 hardens equivalent-unit comparison, Home Assistant templates and page feedback, and adds the read-only `/quality` diagnostics page. The 0.25.0 consumption review and shopping workflows remain unchanged. Production upgrades must take a SQLite online backup before deployment.
 
 Food Assistant is a self-hosted FastAPI middleware for turning user-supplied
 recipe sources into reviewed, normalized recipes in Mealie. It combines an LLM
