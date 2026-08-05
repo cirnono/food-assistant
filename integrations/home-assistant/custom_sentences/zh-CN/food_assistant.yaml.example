@@ -1,0 +1,40 @@
+language: "zh-CN"
+
+intents:
+  FoodAssistantWhatToCook:
+    data:
+      - sentences: ["今天吃什么", "今天做什么菜", "推荐一道菜", "我们今天吃啥", "厨房推荐什么"]
+  FoodAssistantNextRecipe:
+    data:
+      - sentences: ["换一道菜", "换一个推荐", "再推荐一道", "这道不想吃", "下一个菜"]
+  FoodAssistantStartCooking:
+    data:
+      - sentences: ["开始做饭", "开始烹饪", "开始做这道菜", "按这道菜开始"]
+  FoodAssistantCurrentStep:
+    data:
+      - sentences: ["现在做到哪一步", "当前步骤是什么", "接下来做什么", "这一步怎么做"]
+  FoodAssistantNextStep:
+    data:
+      - sentences: ["下一步", "做下一步", "进入下一步", "烹饪下一步"]
+  FoodAssistantPreviousStep:
+    data:
+      - sentences: ["上一步", "返回上一步", "再看上一条步骤"]
+  FoodAssistantConfirmFinishCooking:
+    data:
+      - sentences: ["确认完成烹饪", "确认这道菜做完了", "确认结束本次烹饪"]
+  FoodAssistantShoppingSummary:
+    data:
+      - sentences: ["购物清单有什么", "还要买什么", "看一下购物清单", "有几样东西要买"]
+  FoodAssistantAddShoppingItem:
+    data:
+      - sentences:
+          - "把{item}加入购物清单"
+          - "把{item}放进购物清单"
+          - "购物清单加入{item}"
+          - "记一下要买{item}"
+        lists:
+          item:
+            wildcard: true
+  FoodAssistantPendingConsumption:
+    data:
+      - sentences: ["有多少库存消耗待确认", "有没有消耗记录没确认", "库存待办有几个"]
