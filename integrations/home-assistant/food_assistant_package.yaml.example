@@ -26,8 +26,8 @@ input_select:
   food_assistant_recommendation_mode:
     name: Food Assistant 推荐模式
     options:
-      - ready_now
       - missing_one_or_two
+      - ready_now
       - use_soon
     icon: mdi:tune-variant
 
@@ -134,7 +134,7 @@ rest_command:
       Content-Type: application/json
     payload: >-
       {% set requested_mode = states('input_select.food_assistant_recommendation_mode') %}
-      {% set mode = requested_mode if requested_mode in ['ready_now', 'missing_one_or_two', 'use_soon'] else 'ready_now' %}
+      {% set mode = requested_mode if requested_mode in ['ready_now', 'missing_one_or_two', 'use_soon'] else 'missing_one_or_two' %}
       {"owner":"household","mode":{{ mode | tojson }},"max_missing":2,
       "max_total_time":null,"category":null,"cuisine":null,
       "confirm_owner":"household"}
@@ -151,6 +151,15 @@ rest_command:
     method: POST
     headers: *auth_headers
     payload: '{"owner":"household","refresh_recipe_cache":false}'
+  food_assistant_add_shopping_item:
+    url: >-
+      {{ (state_attr('sensor.food_assistant', 'links') or {}).get('shopping', '') | replace('/shopping', '/api/v1/shopping-list') }}
+    method: POST
+    headers: *auth_headers
+    payload: >-
+      {"owner":"household","name":{{ item_name | trim | tojson }},
+      "quantity":null,"unit":null,"priority":"normal","source":"manual",
+      "notes":"Added by Home Assistant Assist"}
   food_assistant_start_cooking:
     url: >-
       {{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') | replace('/pantry', '/api/v1/cooking-sessions/start') }}
@@ -228,6 +237,93 @@ script:
           entity_id:
             - sensor.food_assistant
             - sensor.food_assistant_cooking
+
+  food_assistant_voice_next_recipe:
+    alias: Food Assistant 语音换一道
+    mode: single
+    sequence:
+      - condition: state
+        entity_id: sensor.food_assistant_cooking
+        state: idle
+      - condition: template
+        value_template: "{{ not is_state('script.food_assistant_next_recipe', 'on') }}"
+      - action: script.food_assistant_next_recipe
+
+  food_assistant_voice_start_cooking:
+    alias: Food Assistant 语音开始烹饪
+    mode: single
+    sequence:
+      - condition: state
+        entity_id: sensor.food_assistant_cooking
+        state: idle
+      - condition: template
+        value_template: >-
+          {% set recipe = state_attr('sensor.food_assistant', 'selected_recipe') or {} %}
+          {{ (recipe.get('slug') or '') | trim | length > 0 }}
+      - action: script.food_assistant_start_cooking
+
+  food_assistant_voice_next_step:
+    alias: Food Assistant 语音下一步
+    mode: single
+    sequence:
+      - condition: state
+        entity_id: sensor.food_assistant_cooking
+        state: active
+      - condition: template
+        value_template: >-
+          {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+          {{ session.get('id', 0) | int(0) > 0 and
+             session.get('current_step_index', -1) | int(-1) + 1 < session.get('step_count', 0) | int(0) }}
+      - action: script.food_assistant_next_step
+
+  food_assistant_voice_previous_step:
+    alias: Food Assistant 语音上一步
+    mode: single
+    sequence:
+      - condition: state
+        entity_id: sensor.food_assistant_cooking
+        state: active
+      - condition: template
+        value_template: >-
+          {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+          {{ session.get('id', 0) | int(0) > 0 and session.get('current_step_index', -1) | int(-1) > 0 }}
+      - action: script.food_assistant_previous_step
+
+  food_assistant_voice_finish_cooking:
+    alias: Food Assistant 语音确认完成烹饪
+    mode: single
+    sequence:
+      - condition: state
+        entity_id: sensor.food_assistant_cooking
+        state: active
+      - condition: template
+        value_template: >-
+          {{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) | int(0) > 0 }}
+      - action: script.food_assistant_finish_cooking
+
+  food_assistant_voice_add_shopping_item:
+    alias: Food Assistant 语音加入购物清单
+    mode: single
+    fields:
+      item_name:
+        name: 购物项名称
+        required: true
+        selector:
+          text:
+    sequence:
+      - variables:
+          clean_item: "{{ item_name | default('', true) | string | trim }}"
+      - condition: template
+        value_template: "{{ clean_item | length > 0 }}"
+      - action: rest_command.food_assistant_add_shopping_item
+        data:
+          item_name: "{{ clean_item }}"
+      - delay: "00:00:01"
+      - action: homeassistant.update_entity
+        data:
+          entity_id:
+            - sensor.food_assistant
+
   food_assistant_next_step:
     alias: Food Assistant 下一步
     sequence:
@@ -268,3 +364,162 @@ script:
           entity_id:
             - sensor.food_assistant
             - sensor.food_assistant_cooking
+
+intent_script:
+  FoodAssistantWhatToCook:
+    speech:
+      text: >-
+        {% set cooking = states('sensor.food_assistant_cooking') %}
+        {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+        {% set recipe = state_attr('sensor.food_assistant', 'selected_recipe') or {} %}
+        {% if cooking == 'active' %}
+          {% set name = session.get('recipe_name') or '当前菜谱' %}
+          {% set step = session.get('current_step_index', -1) | int(-1) + 1 %}
+          {% set total = session.get('step_count', 0) | int(0) %}
+          现在正在做“{{ name }}”，当前是第 {{ step if step > 0 else 1 }} 步，共 {{ total }} 步。
+        {% elif cooking in ['unknown', 'unavailable', 'none', 'None', ''] %}
+          Food Assistant 状态暂时不可用，请稍后再试。
+        {% elif not (recipe.get('name') or '') | trim %}
+          暂时没有符合当前模式的菜谱，请检查库存或换推荐模式。
+        {% else %}
+          {% set minutes = recipe.get('total_time_minutes') %}
+          {% set missing = recipe.get('missing_ingredients') or [] %}
+          今天推荐“{{ recipe.get('name') }}”{% if minutes not in [none, '', 'unknown', 'unavailable'] %}，预计时间 {{ minutes }} 分钟{% endif %}。
+          {% if missing %}缺少食材为{{ missing | join('、') }}。{% else %}现有库存可以完成。{% endif %}
+        {% endif %}
+
+  FoodAssistantNextRecipe:
+    action:
+      - if:
+          - condition: state
+            entity_id: sensor.food_assistant_cooking
+            state: idle
+          - condition: template
+            value_template: "{{ not is_state('script.food_assistant_voice_next_recipe', 'on') }}"
+        then:
+          - action: script.food_assistant_voice_next_recipe
+    speech:
+      text: >-
+        {% set recipe = state_attr('sensor.food_assistant', 'selected_recipe') or {} %}
+        {% if is_state('sensor.food_assistant_cooking', 'active') %}现在正在烹饪，完成或取消后才能换推荐。
+        {% elif is_state('script.food_assistant_voice_next_recipe', 'on') %}正在换推荐，请稍等。
+        {% elif (recipe.get('name') or '') | trim %}新的推荐是“{{ recipe.get('name') }}”。
+        {% else %}暂时没有符合当前模式的菜谱，请检查库存或换推荐模式。{% endif %}
+
+  FoodAssistantStartCooking:
+    action:
+      - variables:
+          cooking_was_idle: "{{ is_state('sensor.food_assistant_cooking', 'idle') }}"
+          recipe_before: "{{ state_attr('sensor.food_assistant', 'selected_recipe') or {} }}"
+      - if:
+          - condition: state
+            entity_id: sensor.food_assistant_cooking
+            state: idle
+          - condition: template
+            value_template: "{{ ((state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('slug') or '') | trim | length > 0 }}"
+        then:
+          - action: script.food_assistant_voice_start_cooking
+    speech:
+      text: >-
+        {% set recipe = state_attr('sensor.food_assistant', 'selected_recipe') or {} %}
+        {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+        {% if not cooking_was_idle %}现在已经有正在进行的烹饪。
+        {% elif is_state('sensor.food_assistant_cooking', 'active') %}已开始烹饪“{{ session.get('recipe_name') or '当前菜谱' }}”，第一步是{{ session.get('current_step') or '请在厨房页面查看步骤' }}。
+        {% elif not (recipe.get('name') or '') | trim %}现在没有可开始的推荐菜谱。
+        {% elif not (recipe.get('slug') or '') | trim %}当前推荐无效，请刷新推荐后再试。
+        {% else %}操作没有完成，请检查 Food Assistant 状态。{% endif %}
+
+  FoodAssistantCurrentStep:
+    speech:
+      text: >-
+        {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+        {% set total = session.get('step_count', 0) | int(0) %}
+        {% if is_state('sensor.food_assistant_cooking', 'active') and total > 0 %}当前第 {{ session.get('current_step_index', -1) | int(-1) + 1 }} 步，共 {{ total }} 步：{{ session.get('current_step') or '步骤内容暂不可用' }}。
+        {% elif is_state('sensor.food_assistant_cooking', 'active') %}当前菜谱没有可读的烹饪步骤。
+        {% else %}现在没有正在进行的烹饪。{% endif %}
+
+  FoodAssistantNextStep:
+    action:
+      - if:
+          - condition: state
+            entity_id: sensor.food_assistant_cooking
+            state: active
+          - condition: template
+            value_template: >-
+              {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+              {{ session.get('id', 0) | int(0) > 0 and
+                 session.get('current_step_index', -1) | int(-1) + 1 < session.get('step_count', 0) | int(0) }}
+        then:
+          - action: script.food_assistant_voice_next_step
+    speech: &step_speech
+      text: >-
+        {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+        {% set current = session.get('current_step_index', -1) | int(-1) %}
+        {% set total = session.get('step_count', 0) | int(0) %}
+        {% if not is_state('sensor.food_assistant_cooking', 'active') %}现在没有正在进行的烹饪。
+        {% elif total <= 0 %}当前菜谱没有可读的烹饪步骤。
+        {% else %}当前第 {{ current + 1 }} 步，共 {{ total }} 步：{{ session.get('current_step') or '步骤内容暂不可用' }}。{% endif %}
+
+  FoodAssistantPreviousStep:
+    action:
+      - if:
+          - condition: state
+            entity_id: sensor.food_assistant_cooking
+            state: active
+          - condition: template
+            value_template: >-
+              {% set session = state_attr('sensor.food_assistant_cooking', 'session') or {} %}
+              {{ session.get('id', 0) | int(0) > 0 and session.get('current_step_index', -1) | int(-1) > 0 }}
+        then:
+          - action: script.food_assistant_voice_previous_step
+    speech: *step_speech
+
+  FoodAssistantConfirmFinishCooking:
+    action:
+      - variables:
+          cooking_was_active: "{{ is_state('sensor.food_assistant_cooking', 'active') }}"
+      - if:
+          - condition: state
+            entity_id: sensor.food_assistant_cooking
+            state: active
+          - condition: template
+            value_template: "{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) | int(0) > 0 }}"
+        then:
+          - action: script.food_assistant_voice_finish_cooking
+    speech:
+      text: >-
+        {% if not cooking_was_active %}现在没有正在进行的烹饪。
+        {% elif is_state('sensor.food_assistant_cooking', 'idle') %}本次烹饪已完成，库存消耗记录等待确认。
+        {% else %}操作没有完成，请检查 Food Assistant 状态。{% endif %}
+
+  FoodAssistantShoppingSummary:
+    speech:
+      text: >-
+        {% set count = states('sensor.food_assistant_shopping_count') | int(0) %}
+        {% set preview = states('sensor.food_assistant_shopping_preview') %}
+        {% if count <= 0 %}购物清单目前为空。
+        {% elif preview in ['unknown', 'unavailable', 'none', 'None', ''] %}购物清单共有 {{ count }} 项，前几项暂时无法读取。
+        {% else %}购物清单共有 {{ count }} 项，前几项是{{ preview }}。{% endif %}
+
+  FoodAssistantAddShoppingItem:
+    action:
+      - variables:
+          clean_item: "{{ item | default('', true) | string | trim }}"
+      - if:
+          - condition: template
+            value_template: "{{ clean_item | length > 0 }}"
+        then:
+          - action: script.food_assistant_voice_add_shopping_item
+            data:
+              item_name: "{{ clean_item }}"
+    speech:
+      text: >-
+        {% set clean_item = item | default('', true) | string | trim %}
+        {% if clean_item %}已提交“{{ clean_item }}”到购物清单。购物清单目前共有 {{ states('sensor.food_assistant_shopping_count') | int(0) }} 项。
+        {% else %}语音参数无效，请换一种说法。{% endif %}
+
+  FoodAssistantPendingConsumption:
+    speech:
+      text: >-
+        {% set count = states('sensor.food_assistant_pending_consumption') | int(0) %}
+        {% if count > 0 %}当前有 {{ count }} 次库存消耗待确认。{% else %}当前没有待确认的库存消耗。{% endif %}

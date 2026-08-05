@@ -1,6 +1,10 @@
 # Food Assistant
 
-Version 0.25.1 hardens equivalent-unit comparison, Home Assistant templates and page feedback, and adds the read-only `/quality` diagnostics page. The 0.25.0 consumption review and shopping workflows remain unchanged. Production upgrades must take a SQLite online backup before deployment.
+Version 0.26.0 adds deterministic Simplified Chinese Home Assistant Assist
+sentences and safe intent scripts for recommendations, cooking navigation,
+shopping, and pending-consumption summaries. Voice completion still creates only
+a review: it never confirms consumption or deducts inventory. Production
+upgrades must take a SQLite online backup before deployment.
 
 Food Assistant is a self-hosted FastAPI middleware for turning user-supplied
 recipe sources into reviewed, normalized recipes in Mealie. It combines an LLM
@@ -19,7 +23,7 @@ Mealie imports, and APIs suitable for Home Assistant automations.
 - Inventory and meal recommendation APIs for Home Assistant
 - Responsive pantry management at `/pantry` and explainable recommendations at
   `/recommendations`
-- Native Home Assistant REST/package and Lovelace bridge examples
+- Native Home Assistant REST/package, Lovelace, and zh-CN Assist examples
 - Persistent step-by-step cooking sessions and durable multi-timers at `/cook`
 - API-token authentication for all `/api/v1/*` endpoints
 - SQLite persistence and Docker Compose deployment
