@@ -262,12 +262,12 @@ def test_update_entity_data_and_recommendation_mode_are_safe():
     recommendation_mode = payload["input_select"]["food_assistant_recommendation_mode"]
     assert "initial" not in recommendation_mode
     assert recommendation_mode["options"] == [
-        "ready_now",
         "missing_one_or_two",
+        "ready_now",
         "use_soon",
     ]
     assert "requested_mode in ['ready_now', 'missing_one_or_two', 'use_soon']" in text
-    assert "else 'ready_now'" in text
+    assert "else 'missing_one_or_two'" in text
     for script in payload["script"].values():
         for step in script["sequence"]:
             if step.get("action") == "homeassistant.update_entity":
