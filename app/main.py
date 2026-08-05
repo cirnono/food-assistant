@@ -41,7 +41,7 @@ from app.recommendations import (
 from app.system_api import router as system_router
 
 
-APP_VERSION = "0.25.1"
+APP_VERSION = "0.26.0"
 
 
 @asynccontextmanager

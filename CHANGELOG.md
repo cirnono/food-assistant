@@ -6,6 +6,27 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-08-06
+
+### Added
+
+- Deterministic Simplified Chinese Home Assistant Assist sentences for recipe,
+  cooking-step, shopping-summary, shopping-add, and pending-consumption intents.
+- Safe single-mode voice wrapper scripts and a schema-valid manual shopping REST command.
+- Read-only Assist installation checker and intent/safety regression coverage.
+
+### Changed
+
+- Document custom-sentence installation, zh-CN pipeline selection, and UI-first
+  Conversation testing.
+- Add a short native Lovelace voice-help card.
+
+### Security
+
+- Require explicit confirmation wording before voice cooking completion and
+  keep consumption confirmation, pantry deduction, destructive shopping, and
+  history deletion unavailable to voice commands.
+
 ## [0.25.1] - 2026-08-04
 
 ### Added
