@@ -22,99 +22,108 @@ sensor:
     scan_interval: 10
     timeout: 10
 
+input_select:
+  food_assistant_recommendation_mode:
+    name: Food Assistant 推荐模式
+    options:
+      - ready_now
+      - missing_one_or_two
+      - use_soon
+    icon: mdi:tune-variant
+
 template:
   - sensor:
       - name: Food Assistant Inventory Total
         unique_id: food_assistant_inventory_total
-        state: "{{ state_attr('sensor.food_assistant', 'inventory').total | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'inventory') or {}).get('total', 0) }}"
       - name: Food Assistant Expiring
         unique_id: food_assistant_expiring
-        state: "{{ state_attr('sensor.food_assistant', 'inventory').expiring | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'inventory') or {}).get('expiring', 0) }}"
       - name: Food Assistant Expired
         unique_id: food_assistant_expired
-        state: "{{ state_attr('sensor.food_assistant', 'inventory').expired | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'inventory') or {}).get('expired', 0) }}"
       - name: Food Assistant Out Of Stock
         unique_id: food_assistant_out_of_stock
-        state: "{{ state_attr('sensor.food_assistant', 'inventory').out_of_stock | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'inventory') or {}).get('out_of_stock', 0) }}"
       - name: Food Assistant Ready Now Count
         unique_id: food_assistant_ready_now_count
-        state: "{{ state_attr('sensor.food_assistant', 'recommendations').ready_now_count | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'recommendations') or {}).get('ready_now_count', 0) }}"
       - name: Food Assistant Recipe
         unique_id: food_assistant_recipe
-        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').name | default('暂无推荐') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('name') or '暂无推荐' }}"
         attributes:
-          missing: "{{ state_attr('sensor.food_assistant', 'selected_recipe').missing_ingredients | default([]) }}"
-          expiring: "{{ state_attr('sensor.food_assistant', 'selected_recipe').expiring_inventory_matches | default([]) }}"
-          total_time: "{{ state_attr('sensor.food_assistant', 'selected_recipe').total_time_minutes | default(none) }}"
+          missing: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('missing_ingredients', []) }}"
+          expiring: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('expiring_inventory_matches', []) }}"
+          total_time: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('total_time_minutes') }}"
       - name: Food Assistant Recipe Score
         unique_id: food_assistant_recipe_score
-        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').score | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('score', 0) }}"
       - name: Food Assistant Recipe Coverage
         unique_id: food_assistant_recipe_coverage
         unit_of_measurement: "%"
-        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').coverage_percent | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('coverage_percent', 0) }}"
       - name: Food Assistant Recipe Missing
         unique_id: food_assistant_recipe_missing
-        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').missing_ingredients | default([]) | join('、') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('missing_ingredients', []) | join('、') }}"
       - name: Food Assistant Recipe URL
         unique_id: food_assistant_recipe_url
-        state: "{{ state_attr('sensor.food_assistant', 'selected_recipe').mealie_url | default('') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('mealie_url', '') }}"
       - name: Food Assistant Pantry URL
         unique_id: food_assistant_pantry_url
-        state: "{{ state_attr('sensor.food_assistant', 'links').pantry | default('') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') }}"
       - name: Food Assistant Recommendations URL
         unique_id: food_assistant_recommendations_url
-        state: "{{ state_attr('sensor.food_assistant', 'links').recommendations | default('') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'links') or {}).get('recommendations', '') }}"
       - name: Food Assistant Cooking Status
         unique_id: food_assistant_cooking_status
         state: "{{ states('sensor.food_assistant_cooking') }}"
       - name: Food Assistant Cooking Recipe
         unique_id: food_assistant_cooking_recipe
-        state: "{{ state_attr('sensor.food_assistant_cooking', 'session').recipe_name | default('') }}"
+        state: "{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('recipe_name', '') }}"
       - name: Food Assistant Cooking Step
         unique_id: food_assistant_cooking_step
-        state: "{{ (state_attr('sensor.food_assistant_cooking', 'session').current_step_index | default(-1) | int) + 1 }}"
+        state: "{{ ((state_attr('sensor.food_assistant_cooking', 'session') or {}).get('current_step_index', -1) | int) + 1 }}"
         attributes:
-          text: "{{ state_attr('sensor.food_assistant_cooking', 'session').current_step | default('') }}"
-          total: "{{ state_attr('sensor.food_assistant_cooking', 'session').step_count | default(0) }}"
+          text: "{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('current_step', '') }}"
+          total: "{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('step_count', 0) }}"
       - name: Food Assistant Cooking Progress
         unique_id: food_assistant_cooking_progress
         unit_of_measurement: "%"
-        state: "{{ state_attr('sensor.food_assistant_cooking', 'session').progress_percent | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('progress_percent', 0) }}"
       - name: Food Assistant Next Timer
         unique_id: food_assistant_next_timer
-        state: "{{ state_attr('sensor.food_assistant_cooking', 'next_timer').label | default('无') }}"
+        state: "{{ (state_attr('sensor.food_assistant_cooking', 'next_timer') or {}).get('label') or '无' }}"
       - name: Food Assistant Next Timer Remaining
         unique_id: food_assistant_next_timer_remaining
         unit_of_measurement: s
-        state: "{{ state_attr('sensor.food_assistant_cooking', 'next_timer').remaining_seconds | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant_cooking', 'next_timer') or {}).get('remaining_seconds', 0) }}"
       - name: Food Assistant Recent Timer
         unique_id: food_assistant_recent_timer
         state: >-
-          {% set finished = (state_attr('sensor.food_assistant_cooking', 'timers') | default([]))
+          {% set finished = (state_attr('sensor.food_assistant_cooking', 'timers') or [])
              | selectattr('state', 'eq', 'finished') | list %}
           {{ finished[-1].label if finished else '无' }}
       - name: Food Assistant Cooking URL
         unique_id: food_assistant_cooking_url
-        state: "{{ state_attr('sensor.food_assistant_cooking', 'links').cooking | default('') }}"
+        state: "{{ (state_attr('sensor.food_assistant_cooking', 'links') or {}).get('cooking', '') }}"
       - name: Food Assistant Shopping Count
         unique_id: food_assistant_shopping_count
-        state: "{{ state_attr('sensor.food_assistant', 'shopping').active_count | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'shopping') or {}).get('active_count', 0) }}"
       - name: Food Assistant Shopping High Priority
         unique_id: food_assistant_shopping_high_priority
-        state: "{{ state_attr('sensor.food_assistant', 'shopping').high_priority_count | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'shopping') or {}).get('high_priority_count', 0) }}"
       - name: Food Assistant Pending Consumption
         unique_id: food_assistant_pending_consumption
-        state: "{{ state_attr('sensor.food_assistant', 'shopping').pending_consumption_reviews | default(0) }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'shopping') or {}).get('pending_consumption_reviews', 0) }}"
       - name: Food Assistant Shopping Preview
         unique_id: food_assistant_shopping_preview
-        state: "{{ state_attr('sensor.food_assistant', 'shopping').next_items | default([]) | map(attribute='name') | join('、') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'shopping') or {}).get('next_items', []) | map(attribute='name') | join('、') }}"
       - name: Food Assistant Consumption URL
         unique_id: food_assistant_consumption_url
-        state: "{{ state_attr('sensor.food_assistant', 'links').consumption | default('') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'links') or {}).get('consumption', '') }}"
       - name: Food Assistant Shopping URL
         unique_id: food_assistant_shopping_url
-        state: "{{ state_attr('sensor.food_assistant', 'links').shopping | default('') }}"
+        state: "{{ (state_attr('sensor.food_assistant', 'links') or {}).get('shopping', '') }}"
 
 rest_command:
   food_assistant_next_recipe:
@@ -124,7 +133,9 @@ rest_command:
       Authorization: !secret food_assistant_authorization
       Content-Type: application/json
     payload: >-
-      {"owner":"household","mode":"ready_now","max_missing":2,
+      {% set requested_mode = states('input_select.food_assistant_recommendation_mode') %}
+      {% set mode = requested_mode if requested_mode in ['ready_now', 'missing_one_or_two', 'use_soon'] else 'ready_now' %}
+      {"owner":"household","mode":{{ mode | tojson }},"max_missing":2,
       "max_total_time":null,"category":null,"cuisine":null,
       "confirm_owner":"household"}
   food_assistant_mark_cooked:
@@ -133,7 +144,7 @@ rest_command:
     headers: *auth_headers
     payload: >-
       {"owner":"household","confirm_slug":
-      {{ state_attr('sensor.food_assistant', 'selected_recipe').slug | tojson }},
+      {{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('slug') | tojson }},
       "servings":null,"rating":null,"notes":null,"select_next":true}
   food_assistant_refresh:
     url: !secret food_assistant_refresh_url
@@ -142,42 +153,42 @@ rest_command:
     payload: '{"owner":"household","refresh_recipe_cache":false}'
   food_assistant_start_cooking:
     url: >-
-      {{ state_attr('sensor.food_assistant', 'links').pantry | replace('/pantry', '/api/v1/cooking-sessions/start') }}
+      {{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') | replace('/pantry', '/api/v1/cooking-sessions/start') }}
     method: POST
     headers: *auth_headers
     payload: >-
       {"owner":"household","mealie_slug":
-      {{ state_attr('sensor.food_assistant', 'selected_recipe').slug | tojson }},
-      "confirm_slug":{{ state_attr('sensor.food_assistant', 'selected_recipe').slug | tojson }},
+      {{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('slug') | tojson }},
+      "confirm_slug":{{ (state_attr('sensor.food_assistant', 'selected_recipe') or {}).get('slug') | tojson }},
       "servings":null}
   food_assistant_next_step:
     url: >-
-      {{ state_attr('sensor.food_assistant', 'links').pantry | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ state_attr('sensor.food_assistant_cooking', 'session').id }}/next-step
+      {{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }}/next-step
     method: POST
     headers: *auth_headers
     payload: >-
-      {"owner":"household","confirm_session_id":{{ state_attr('sensor.food_assistant_cooking', 'session').id }}}
+      {"owner":"household","confirm_session_id":{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }}}
   food_assistant_previous_step:
     url: >-
-      {{ state_attr('sensor.food_assistant', 'links').pantry | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ state_attr('sensor.food_assistant_cooking', 'session').id }}/previous-step
+      {{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }}/previous-step
     method: POST
     headers: *auth_headers
     payload: >-
-      {"owner":"household","confirm_session_id":{{ state_attr('sensor.food_assistant_cooking', 'session').id }}}
+      {"owner":"household","confirm_session_id":{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }}}
   food_assistant_finish_cooking:
     url: >-
-      {{ state_attr('sensor.food_assistant', 'links').pantry | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ state_attr('sensor.food_assistant_cooking', 'session').id }}/finish
+      {{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }}/finish
     method: POST
     headers: *auth_headers
     payload: >-
-      {"owner":"household","confirm_session_id":{{ state_attr('sensor.food_assistant_cooking', 'session').id }},"select_next":true}
+      {"owner":"household","confirm_session_id":{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }},"select_next":true}
   food_assistant_cancel_cooking:
     url: >-
-      {{ state_attr('sensor.food_assistant', 'links').pantry | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ state_attr('sensor.food_assistant_cooking', 'session').id }}/cancel
+      {{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') | replace('/pantry', '/api/v1/cooking-sessions/') }}{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }}/cancel
     method: POST
     headers: *auth_headers
     payload: >-
-      {"owner":"household","confirm_session_id":{{ state_attr('sensor.food_assistant_cooking', 'session').id }}}
+      {"owner":"household","confirm_session_id":{{ (state_attr('sensor.food_assistant_cooking', 'session') or {}).get('id', 0) }}}
 
 script:
   food_assistant_next_recipe:
@@ -186,53 +197,74 @@ script:
       - action: rest_command.food_assistant_next_recipe
       - delay: "00:00:02"
       - action: homeassistant.update_entity
-        target: {entity_id: sensor.food_assistant}
+        data:
+          entity_id:
+            - sensor.food_assistant
   food_assistant_mark_cooked:
     alias: Food Assistant 标记今天做了
     sequence:
       - action: rest_command.food_assistant_mark_cooked
       - delay: "00:00:02"
       - action: homeassistant.update_entity
-        target: {entity_id: sensor.food_assistant}
+        data:
+          entity_id:
+            - sensor.food_assistant
   food_assistant_refresh:
     alias: Food Assistant 刷新
     sequence:
       - action: rest_command.food_assistant_refresh
       - delay: "00:00:02"
       - action: homeassistant.update_entity
-        target: {entity_id: sensor.food_assistant}
+        data:
+          entity_id:
+            - sensor.food_assistant
   food_assistant_start_cooking:
     alias: Food Assistant 开始做饭
     sequence:
       - action: rest_command.food_assistant_start_cooking
       - delay: "00:00:01"
       - action: homeassistant.update_entity
-        target: {entity_id: [sensor.food_assistant, sensor.food_assistant_cooking]}
+        data:
+          entity_id:
+            - sensor.food_assistant
+            - sensor.food_assistant_cooking
   food_assistant_next_step:
     alias: Food Assistant 下一步
     sequence:
       - action: rest_command.food_assistant_next_step
       - delay: "00:00:01"
       - action: homeassistant.update_entity
-        target: {entity_id: [sensor.food_assistant, sensor.food_assistant_cooking]}
+        data:
+          entity_id:
+            - sensor.food_assistant
+            - sensor.food_assistant_cooking
   food_assistant_previous_step:
     alias: Food Assistant 上一步
     sequence:
       - action: rest_command.food_assistant_previous_step
       - delay: "00:00:01"
       - action: homeassistant.update_entity
-        target: {entity_id: [sensor.food_assistant, sensor.food_assistant_cooking]}
+        data:
+          entity_id:
+            - sensor.food_assistant
+            - sensor.food_assistant_cooking
   food_assistant_finish_cooking:
     alias: Food Assistant 完成烹饪
     sequence:
       - action: rest_command.food_assistant_finish_cooking
       - delay: "00:00:01"
       - action: homeassistant.update_entity
-        target: {entity_id: [sensor.food_assistant, sensor.food_assistant_cooking]}
+        data:
+          entity_id:
+            - sensor.food_assistant
+            - sensor.food_assistant_cooking
   food_assistant_cancel_cooking:
     alias: Food Assistant 取消烹饪
     sequence:
       - action: rest_command.food_assistant_cancel_cooking
       - delay: "00:00:01"
       - action: homeassistant.update_entity
-        target: {entity_id: [sensor.food_assistant, sensor.food_assistant_cooking]}
+        data:
+          entity_id:
+            - sensor.food_assistant
+            - sensor.food_assistant_cooking

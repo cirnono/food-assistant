@@ -1,6 +1,6 @@
 # Home Assistant bridge
 
-Food Assistant 0.24 provides authenticated aggregate and active-cooking APIs and native Home
+Food Assistant 0.25.1 provides authenticated aggregate and active-cooking APIs and native Home
 Assistant examples. It requires neither HACS nor MQTT Discovery. Food Assistant
 and Home Assistant must be able to reach one another over the network.
 
@@ -43,7 +43,7 @@ it does not contact Mealie or run the recommendation engine.
 
 Use `integrations/home-assistant/lovelace-kitchen.yaml.example` as a YAML-mode
 dashboard view, or reproduce its native Markdown, Grid, Button, Glance, and
-Conditional cards in the visual editor. It works on a Surface in landscape and
+Conditional/Entities cards in the visual editor. It works on a Surface in landscape and
 on a phone in portrait. No frontend card receives the API credential.
 
 The view can choose another recipe, start or continue a cooking session, move
@@ -69,9 +69,25 @@ the URL is optional and contains no credential.
 Polling never changes a valid selection. Only explicit next/cooked actions, a
 missing recipe, or a newly violated hard filter changes it.
 
-`ready_now` can legitimately contain only one candidate, so “换一道” may have
-no different recipe to select. To use a broader queue, change the `mode` query
-parameter in `food_assistant_state_url` and the `mode` field in the
-`food_assistant_next_recipe` payload together. Supported alternatives include
-`missing_one_or_two` and `use_soon`; keeping both locations aligned preserves a
-stable selection and makes the next action use the same recommendation group.
+Choose the recommendation mode from the dashboard's native selector:
+
+- `ready_now`: only recipes possible with current inventory.
+- `missing_one_or_two`: recipes missing one or two ingredients.
+- `use_soon`: prioritize ingredients approaching expiry.
+
+On first installation, when Home Assistant has no state to restore, the selector
+will usually start with the first option, `ready_now`. After the user chooses a
+mode, Home Assistant restores that last state across restarts. For everyday
+household use, consider selecting `missing_one_or_two`.
+
+Unknown or unavailable selector states safely fall back to `ready_now`; the
+package never sends arbitrary selector text. To refresh both REST sensors from
+Developer Tools, use the service data form expected by Home Assistant:
+
+```yaml
+action: homeassistant.update_entity
+data:
+  entity_id:
+    - sensor.food_assistant
+    - sensor.food_assistant_cooking
+```

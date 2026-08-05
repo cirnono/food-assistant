@@ -255,6 +255,43 @@ def test_home_assistant_package_has_cooking_sensor_actions_and_scripts():
         assert "confirm_" in payload["rest_command"][name]["payload"]
 
 
+def test_update_entity_data_and_recommendation_mode_are_safe():
+    path = "integrations/home-assistant/food_assistant_package.yaml.example"
+    text = open(path, encoding="utf-8").read()
+    payload = yaml.load(text, Loader=SecretLoader)
+    recommendation_mode = payload["input_select"]["food_assistant_recommendation_mode"]
+    assert "initial" not in recommendation_mode
+    assert recommendation_mode["options"] == [
+        "ready_now",
+        "missing_one_or_two",
+        "use_soon",
+    ]
+    assert "requested_mode in ['ready_now', 'missing_one_or_two', 'use_soon']" in text
+    assert "else 'ready_now'" in text
+    for script in payload["script"].values():
+        for step in script["sequence"]:
+            if step.get("action") == "homeassistant.update_entity":
+                assert "target" not in step
+                assert isinstance(step["data"]["entity_id"], list)
+    assert "perform_action: script.turn_on" in open(
+        "integrations/home-assistant/lovelace-kitchen.yaml.example", encoding="utf-8"
+    ).read()
+
+
+def test_templates_are_none_safe_and_dashboard_step_is_one_line():
+    package = open(
+        "integrations/home-assistant/food_assistant_package.yaml.example", encoding="utf-8"
+    ).read()
+    dashboard = open(
+        "integrations/home-assistant/lovelace-kitchen.yaml.example", encoding="utf-8"
+    ).read()
+    template_section = package.split("rest_command:", 1)[0]
+    assert ") or {}" in template_section
+    assert ").total" not in template_section
+    assert "input_select.food_assistant_recommendation_mode" in dashboard
+    assert "当前步骤：{{ states('sensor.food_assistant_cooking_step') }} /" in dashboard
+
+
 def _walk_yaml(value):
     if isinstance(value, dict):
         yield value

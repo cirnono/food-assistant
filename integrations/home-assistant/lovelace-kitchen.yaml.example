@@ -30,12 +30,23 @@ cards:
             预计时间：{{ state_attr('sensor.food_assistant_recipe', 'total_time') | default('未知') }} 分钟
 
             [打开 Mealie]({{ states('sensor.food_assistant_recipe_url') }}) ·
-            [管理库存]({{ state_attr('sensor.food_assistant', 'links').pantry }}) ·
-            [查看全部推荐]({{ state_attr('sensor.food_assistant', 'links').recommendations }}) ·
+            [管理库存]({{ (state_attr('sensor.food_assistant', 'links') or {}).get('pantry', '') }}) ·
+            [查看全部推荐]({{ (state_attr('sensor.food_assistant', 'links') or {}).get('recommendations', '') }}) ·
             [打开消耗确认]({{ states('sensor.food_assistant_consumption_url') }}) ·
             [打开购物清单]({{ states('sensor.food_assistant_shopping_url') }})
 
             待确认库存消耗：{{ states('sensor.food_assistant_pending_consumption') }}；购物清单：{{ states('sensor.food_assistant_shopping_count') }}
+            {% if states('sensor.food_assistant_pending_consumption') | int(0) > 0 %}
+            **有 {{ states('sensor.food_assistant_pending_consumption') }} 次库存消耗待确认。**
+            {% endif %}
+            {% if states('sensor.food_assistant_shopping_high_priority') | int(0) > 0 %}
+            **有 {{ states('sensor.food_assistant_shopping_high_priority') }} 项高优先级购物。**
+            {% endif %}
+        - type: entities
+          title: 推荐设置
+          entities:
+            - entity: input_select.food_assistant_recommendation_mode
+              name: 推荐模式
         - type: grid
           columns: 4
           square: false
@@ -93,7 +104,7 @@ cards:
           content: >-
             ## {{ states('sensor.food_assistant_cooking_recipe') }}
 
-            当前步骤 {{ states('sensor.food_assistant_cooking_step') }} / {{ state_attr('sensor.food_assistant_cooking_step', 'total') }}
+            当前步骤：{{ states('sensor.food_assistant_cooking_step') }} / {{ state_attr('sensor.food_assistant_cooking_step', 'total') or 0 }}
 
             **{{ state_attr('sensor.food_assistant_cooking_step', 'text') }}**
 

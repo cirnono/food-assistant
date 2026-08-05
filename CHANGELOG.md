@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.25.1] - 2026-08-04
+
+### Added
+
+- Read-only local data-quality diagnostics at `/quality`.
+- Configurable Home Assistant recommendation mode.
+
+### Changed
+
+- Normalize equivalent unit spellings for safe comparisons without converting quantities.
+- Use compatible Home Assistant refresh actions and None-safe templates.
+- Unify local-page navigation, token storage, feedback styling, and touch sizing.
+
 ## [0.25.0] - 2026-08-04
 
 ### Added

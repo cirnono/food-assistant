@@ -10,12 +10,43 @@ STYLE = """
 :root{--bg:#f5f1e8;--panel:#fffdf8;--border:#ddd3c2;--text:#312b23;--muted:#756b5d;--primary:#8a5a2b;--danger:#9b302d;--warn:#956600;--ok:#23643f}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,'Noto Sans SC','Microsoft YaHei',system-ui,sans-serif}header{padding:18px clamp(16px,4vw,40px);background:var(--panel);border-bottom:1px solid var(--border);display:flex;gap:16px;justify-content:space-between;align-items:center;flex-wrap:wrap}main{max-width:1280px;margin:auto;padding:20px}.panel,.card{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:15px}.toolbar,.grid,.actions{display:flex;gap:10px;flex-wrap:wrap}.toolbar>*{flex:1;min-width:130px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));margin:14px 0}.summary{font-size:26px;font-weight:700}.muted{color:var(--muted)}input,select,textarea,button{font:inherit;padding:9px 10px;border:1px solid var(--border);border-radius:8px;background:white;color:var(--text)}button{cursor:pointer}button:disabled{cursor:wait;opacity:.6}button.primary{background:var(--primary);color:white}button.danger{background:var(--danger);color:white}.status{display:inline-block;border-radius:999px;padding:3px 8px;background:#eee}.expired{color:var(--danger);background:#f7e5e3}.expiring{color:var(--warn);background:#f8efd2}.location{margin:22px 0}.error,.warning{display:none;padding:12px;border-radius:8px;margin:12px 0;white-space:pre-wrap}.error{background:#f7e5e3;color:var(--danger)}.warning{background:#f8efd2;color:var(--warn)}dialog{border:1px solid var(--border);border-radius:12px;max-width:520px;width:calc(100% - 24px)}dialog form{display:grid;gap:10px}@media(max-width:600px){main{padding:12px}.actions button{flex:1}.card{padding:12px}}
 """
 
-TOKEN_JS = """
+STYLE += """
+.page-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.site-nav{display:flex;gap:4px;flex-wrap:wrap;width:100%}.site-nav a{padding:10px 12px;min-height:48px;display:inline-flex;align-items:center;border:1px solid transparent;border-radius:8px;color:var(--primary);text-decoration:none}.site-nav a.current{background:var(--primary);border-color:var(--primary);color:white}.success{display:none;padding:12px;border-radius:8px;margin:12px 0;white-space:pre-wrap;background:#e2f2e8;color:var(--ok)}button.success{display:inline-block;background:var(--ok);color:white}h1{margin:.2em 0}a{overflow-wrap:anywhere}@media(max-width:600px){button,input,select,.site-nav a{min-height:48px}.page-tools{width:100%}.page-tools input{flex:1;min-width:150px}}
+"""
+
+NAV_ITEMS = (
+    ("cook", "/cook", "厨房"),
+    ("pantry", "/pantry", "库存"),
+    ("recommendations", "/recommendations", "推荐"),
+    ("consumption", "/consumption", "消耗确认"),
+    ("shopping", "/shopping", "购物清单"),
+    ("quality", "/quality", "数据质量"),
+)
+
+
+def navigation(current: str) -> str:
+    links = "".join(
+        f'<a href="{path}" class="{"current" if key == current else ""}" '
+        f'aria-current="{"page" if key == current else "false"}">{label}</a>'
+        for key, path, label in NAV_ITEMS
+    )
+    return (
+        '<div class="page-tools"><input id="token" type="password" '
+        'placeholder="Food Assistant API Token" autocomplete="off">'
+        '<button onclick="saveToken()">保存令牌</button></div>'
+        f'<nav class="site-nav" aria-label="主导航">{links}</nav>'
+    )
+
+TOKEN_JS = r"""
 const tokenKey='foodAssistantApiToken';
 function token(){return localStorage.getItem(tokenKey)||''}
-function saveToken(){localStorage.setItem(tokenKey,document.querySelector('#token').value.trim());load()}
+function installNavigation(){const header=document.querySelector('header');if(!header||header.querySelector('.site-nav'))return;const links=[['/cook','厨房'],['/pantry','库存'],['/recommendations','推荐'],['/consumption','消耗确认'],['/shopping','购物清单'],['/quality','数据质量']];const path=location.pathname.replace(/\/$/,'')||'/';const nav=document.createElement('nav');nav.className='site-nav';nav.setAttribute('aria-label','主导航');nav.innerHTML=links.map(([href,label])=>`<a href="${href}" class="${path===href?'current':''}" aria-current="${path===href?'page':'false'}">${label}</a>`).join('');header.appendChild(nav)}
+function clearMessages(){for(const id of ['error','success','feedback']){const box=document.querySelector('#'+id);if(box){box.textContent='';box.style.display='none'}}}
+function success(message){const box=document.querySelector('#success')||document.querySelector('#feedback');if(!box)return;box.textContent=message;box.style.display='block'}
+function saveToken(){localStorage.setItem(tokenKey,document.querySelector('#token').value.trim());success('令牌已保存到此浏览器。');load()}
 async function api(path,options={}){const headers={...(options.headers||{}),'X-Food-Assistant-Token':token()};if(options.body)headers['Content-Type']='application/json';const r=await fetch(path,{...options,headers});if(!r.ok){let message=`HTTP ${r.status}`;try{const body=await r.json();message=typeof body.detail==='string'?body.detail:JSON.stringify(body.detail)}catch{}throw new Error(message)}return r.status===204?null:r.json()}
 function fail(error){const box=document.querySelector('#error');box.textContent=error.message||String(error);box.style.display='block'}
+installNavigation();
 """
 
 
@@ -32,7 +63,7 @@ def recommendations_page() -> HTMLResponse:
 
 
 PANTRY_HTML = f'''<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>库存管理 · Food Assistant</title><style>{STYLE}</style></head><body>
-<header><div><h1>库存管理</h1><span class="muted">库存 → 菜谱推荐</span></div><div><input id="token" type="password" placeholder="Food Assistant API Token"><button onclick="saveToken()">保存令牌</button><a href="/recommendations">推荐</a></div></header><main><div id="error" class="error"></div>
+<header><div><h1>库存管理</h1><span class="muted">库存 → 菜谱推荐</span></div>{navigation("pantry")}</header><main><div id="error" class="error"></div><div id="success" class="success" role="status"></div>
 <section id="summary" class="grid"></section><section class="panel toolbar"><input id="q" placeholder="搜索食材" oninput="loadItems()"><select id="location" onchange="loadItems()"><option value="">全部位置</option><option>fridge</option><option>freezer</option><option>pantry</option><option>other</option></select><select id="state" onchange="loadItems()"><option value="">全部状态</option><option value="expired">过期</option><option value="low">低库存</option><option value="staple">常备品</option></select><button class="primary" onclick="edit()">添加库存</button></section><div id="groups"></div></main>
 <dialog id="editor"><form method="dialog" onsubmit="submitItem(event)"><h2 id="editorTitle">库存</h2><input type="hidden" id="id"><label>名称<input id="name" required maxlength="120"></label><label>数量（留空表示有库存但未记录数量）<input id="quantity" type="number" min="0" step="any"></label><label>单位<input id="unit"></label><label>位置<select id="editLocation"><option>fridge</option><option>freezer</option><option selected>pantry</option><option>other</option></select></label><label>过期日期<input id="expires" type="date"></label><label>低库存阈值<input id="threshold" type="number" min="0" step="any"></label><label>owner<input id="owner" value="household"></label><label><input id="staple" type="checkbox"> 常备品</label><div class="actions"><button type="button" onclick="editor.close()">取消</button><button class="primary">保存</button></div></form></dialog>
 <dialog id="restock"><form method="dialog" onsubmit="submitRestock(event)"><h2>补货</h2><input type="hidden" id="restockId"><label>数量<input id="restockQuantity" type="number" min="0" step="any"></label><label>单位<input id="restockUnit"></label><label>购买日期<input id="purchased" type="date"></label><label>过期日期<input id="restockExpires" type="date"></label><div class="actions"><button type="button" onclick="restock.close()">取消</button><button class="primary">补货</button></div></form></dialog>
