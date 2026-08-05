@@ -2,6 +2,18 @@ title: 厨房
 path: kitchen
 icon: mdi:chef-hat
 cards:
+  - type: markdown
+    title: Food Assistant 语音
+    content: |-
+      语音示例：
+
+      - 今天吃什么
+      - 换一道菜
+      - 开始做饭
+      - 下一步
+      - 把鸡蛋加入购物清单
+
+      安装与安全说明见 `docs/home-assistant.md`。
   - type: conditional
     conditions:
       - condition: state
